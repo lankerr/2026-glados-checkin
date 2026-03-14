@@ -141,6 +141,20 @@ GLaDOS 在 2026 年初进行了 API 更新，**绝大多数旧签到脚本已失
 
 ---
 
+## 🛠 配置参数 (环境变量)
+
+本项目支持以下环境变量配置：
+
+| 变量名 | 必填 | 说明 |
+|------|------|------|
+| `GLADOS_COOKIE` | ✅ 是 | GLaDOS 的 Cookie。多个账号请用 `&` 或换行符分隔。 |
+| `PUSHPLUS_TOKEN` | ❌ 否 | PushPlus 微信推送 Token。 |
+| `TELEGRAM_BOT_TOKEN` | ❌ 否 | Telegram 机器人的 Token（例如 `123456:ABC-DEF1234...`） |
+| `TELEGRAM_CHAT_ID` | ❌ 否 | 接收推送的 Telegram Chat ID |
+| `PUSH_LEVEL` | ❌ 否 | 推送级别：`all` (默认，每次均推送) 或 `fail_only` (仅有账号签到失败时推送) |
+
+---
+
 <details>
 <summary><b>📚 给小白的科普：什么是 Fork、Cookie、Secrets？（新手必看）</b></summary>
 
@@ -428,6 +442,92 @@ else:
 ![启用 Actions](images/workflow.png)
 
 **🎉 完成！** 以后每天 9:30 和 21:30 会自动签到。
+
+---
+
+## 💻 本地/独立服务器部署教程
+
+如果你有自己的长期运行的电脑（如树莓派、软路由、VPS 等），也可以非常简单地在本地运行：
+
+### 第一步：安装依赖
+
+首先确保你已经安装了 Python 3，然后安装依赖库：
+
+```bash
+git clone https://github.com/你的用户名/2026-glados-checkin.git
+cd 2026-glados-checkin
+pip install -r requirements.txt
+```
+
+### 第二步：配置并运行
+
+使用环境变量传递 Cookie 并直接运行 Python 脚本：
+
+```bash
+# 配置 Cookie
+export GLADOS_COOKIE="koa:sess=xxxxxx; koa:sess.sig=yyyyyy"
+
+# 可选：配置推送
+export PUSH_LEVEL="all"
+export TELEGRAM_BOT_TOKEN="xxx"
+export TELEGRAM_CHAT_ID="yyy"
+
+# 执行签到
+python3 checkin.py
+```
+
+### 第三步：设置定时任务 (Cron)
+
+通过 `crontab -e` 配置每天自动执行（例如每天早上 9:30）：
+
+```bash
+30 9 * * * export GLADOS_COOKIE="koa:sess=xxx..."; cd /path/to/2026-glados-checkin && python3 checkin.py >> glados.log 2>&1
+```
+
+---
+
+## ❄️ NixOS 服务配置
+
+本项目提供了标准的 Nix Flake，你可以直接作为 inputs 引入，系统会自动管理 Python 环境和依赖包。
+
+### 使用方法 (Flakes)
+
+在你的 `flake.nix` 中引入本项目：
+
+```nix
+{
+  inputs = {
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+    glados-checkin.url = "github:lankerr/2026-glados-checkin"; # 若本地测试可改写为 path:/绝对路径
+  };
+
+  outputs = { self, nixpkgs, glados-checkin, ... }: {
+    nixosConfigurations.my-server = nixpkgs.lib.nixosSystem {
+      system = "x86_64-linux";
+      modules = [
+        # 引入 glados-checkin 的 NixOS 模块
+        glados-checkin.nixosModules.default
+        
+        ({ config, pkgs, ... }: {
+          # 配置服务
+          services.glados-checkin = {
+            enable = true;
+            cookie = "koa:sess=xxx; koa:sess.sig=yyy"; 
+            
+            # 【可选】消息推送配置
+            pushLevel = "all"; # 或 "fail_only"
+            pushplusToken = "xxx";
+            telegramBotToken = "yyy";
+            telegramChatId = "zzz";
+          };
+        })
+      ];
+    };
+  };
+}
+```
+
+部署配置后执行 `sudo nixos-rebuild switch --flake .#my-server`，签到任务即会自动注册为 systemd timers。
 
 ---
 

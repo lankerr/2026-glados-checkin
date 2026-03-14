@@ -167,6 +167,52 @@ def pushplus(token, title, content):
     except:
         log("❌ PushPlus 推送失败")
 
+def telegram_push(token, chat_id, title, content):
+    if not token or not chat_id: return
+    try:
+        import re
+        url = f"https://api.telegram.org/bot{token}/sendMessage"
+        # Convert HTML to be Telegram-compatible
+        text = f"<b>{title}</b>\n\n{content}"
+        
+        # 1. Block elements replacements (handle tags with attributes)
+        text = text.replace("<br>", "\n")
+        # Handle H3 tags
+        text = re.sub(r"<h3[^>]*>", "<b>", text)
+        text = text.replace("</h3>", "</b>\n")
+        
+        # 2. Paragraph and Div tags
+        text = re.sub(r"<(div|p)[^>]*>", "", text)
+        text = re.sub(r"</(div|p)>", "\n", text)
+        
+        # 3. Span and small tags
+        text = re.sub(r"<(span|small)[^>]*>", "", text)
+        text = re.sub(r"</(span|small)>", "", text)
+        
+        # 4. Final cleaning: Strip all HTML tags EXCEPT the ones supported by Telegram: b, i, u, s, a, code, pre
+        text = re.sub(r"<(?!\/?(b|i|u|s|a|code|pre)\b)[^>]+>", "", text)
+        
+        # 5. Dedent each line to fix alignment issues caused by HTML template indentation
+        lines = [line.strip() for line in text.split('\n')]
+        text = "\n".join(lines)
+        
+        # 6. Collapse multiple newlines
+        text = re.sub(r"\n\s*\n", "\n\n", text).strip()
+        
+        data = {
+            "chat_id": chat_id,
+            "text": text,
+            "parse_mode": "HTML"
+        }
+        log(f"发送内容: {data}")
+        resp=requests.post(url, json=data, timeout=5)
+        if resp.status_code != 200:
+            log(f"❌ Telegram 推送失败: {resp.json()}")
+            return
+        log("✅ Telegram 推送成功")
+    except Exception as e:
+        log(f"❌ Telegram 推送失败: {e}")
+
 def main():
     log("🚀 2026 GLaDOS Checkin Starting...")
     cookies = get_cookies()
@@ -201,25 +247,32 @@ def main():
     <p style="margin:8px 0; color:#000; font-size:16px;"><b>签到结果:</b> {msg}</p>
     <div style="margin-top:15px; padding:12px; background:#f0f0f0; border-radius:8px; border:1px solid #ccc;">
         <p style="margin:0 0 8px 0; color:#333; font-weight:bold; font-size:15px;">🎁 兑换选项:</p>
-        <p style="margin:0; color:#000; font-size:14px; line-height:1.8;">{g.exchange_info}</p>
+        <p style="margin:0; color:#000; font-size:14px; line-height:1.8;">
+{g.exchange_info}</p>
     </div>
 </div>
 """)
 
     # Push
+    push_level = os.environ.get("PUSH_LEVEL", "all").lower()
+    
+    if push_level == "fail_only" and success_cnt == len(cookies):
+        log("⏭️ 根据 PUSH_LEVEL=fail_only 设置，所有账号签到成功，跳过推送")
+        return
+
     ptoken = os.environ.get("PUSHPLUS_TOKEN")
-    if ptoken:
-        # Get first user's points for title
-        first_points = "多账户"
-        if len(cookies) == 1:
-            # Re-parse log to find points? Or just use last object
-            # Ideally store objects. Using simplified approach:
-            pass 
-        
+    tg_token = os.environ.get("TELEGRAM_BOT_TOKEN")
+    tg_chat_id = os.environ.get("TELEGRAM_CHAT_ID")
+    
+    if ptoken or (tg_token and tg_chat_id):
         title = f"GLaDOS签到: 成功{success_cnt}/{len(cookies)}"
         content = "".join(results)
         content += f"<br><small>时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</small>"
-        pushplus(ptoken, title, content)
+        
+        if ptoken:
+            pushplus(ptoken, title, content)
+        if tg_token and tg_chat_id:
+            telegram_push(tg_token, tg_chat_id, title, content)
 
 if __name__ == '__main__':
     main()
