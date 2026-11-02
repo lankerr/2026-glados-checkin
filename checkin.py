@@ -18,7 +18,7 @@ import os
 import re
 import sys
 import time
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 
 import requests
 
@@ -72,9 +72,12 @@ LEGACY_SESSION_COOKIES = ('koa:sess', 'koa:sess.sig')
 
 # ================= 工具函数 =================
 
+def beijing_time():
+    return datetime.now(timezone(timedelta(hours=8))).strftime("%Y-%m-%d %H:%M:%S")
+
+
 def log(msg):
-    ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    print(f"[{ts}] {msg}")
+    print(f"[{beijing_time()} 北京时间] {msg}")
 
 def extract_cookie(raw: str):
     """提取 Cookie，支持请求头及 Cookie-Editor JSON 导出格式。"""
@@ -202,14 +205,26 @@ def is_non_retryable_checkin_result(result):
     )
 
 
+def is_missing_api_response(result):
+    return not isinstance(result, dict) or result.get('request_failed') is True
+
+
 def summarize_checkin_failure(result):
     """Describe failures using fixed labels and allowlisted, non-secret metadata."""
     if not isinstance(result, dict):
-        return '未收到有效 API 响应'
+        return '未收到有效 API 响应；本次请求失败，今日签到状态未知'
 
     reason = str(result.get('reason', '')).strip().lower()
     message = str(result.get('message', '')).strip().lower()
-    if reason == 'device-mismatch':
+    if result.get('request_failed') is True:
+        if result.get('invalid_headers') is True:
+            label = '请求头格式无效，请检查 Cookie 和 User-Agent 格式'
+        elif result.get('invalid_response') is True:
+            label = '服务响应格式异常，未收到有效 API 响应'
+        else:
+            label = '网络或服务暂时异常，未收到有效 API 响应'
+        label += '；本次请求失败，今日签到状态未知'
+    elif reason == 'device-mismatch':
         label = '服务端拒绝设备校验；请核对会话和 User-Agent 配置'
     elif 'automated check-in detected' in message:
         label = '服务端拒绝自动签到；请核对会话配置，仍失败时联系服务方'
@@ -225,6 +240,8 @@ def summarize_checkin_failure(result):
     status = result.get('http_status')
     if type(status) is int and 100 <= status <= 599:
         details.append(f'http_status={status}')
+    if result.get('request_failed') is True and result.get('timed_out') is True:
+        details.append('timeout=true')
     if reason in ('device-mismatch', 'http-auth-rejected'):
         details.append(f'reason={reason}')
     return label + (f" [{', '.join(details)}]" if details else '')
@@ -237,7 +254,7 @@ def log_user_agent_configuration():
 
 def is_normal_checkin_result(result):
     """Return True for a new check-in or a harmless already-checked-in response."""
-    if not isinstance(result, dict):
+    if is_missing_api_response(result):
         return False
     if is_non_retryable_checkin_result(result):
         return False
@@ -293,6 +310,8 @@ class GLaDOS:
 
     def req(self, method, path, data=None, form=False):
         """带自动域名切换的请求；form=True 时以表单提交（兑换接口要求）"""
+        # Keep only fixed, non-secret failure metadata after all domains fail.
+        failure = {'request_failed': True, 'reason': 'request-failed'}
         for d in DOMAINS:
             try:
                 url = f"{d}{path}"
@@ -313,8 +332,13 @@ class GLaDOS:
                     resp = requests.post(url, headers=h, json=data, timeout=10)
 
                 if resp.status_code == 200:
-                    self.domain = d # Remember working domain
-                    return resp.json()
+                    payload = resp.json()
+                    if isinstance(payload, dict):
+                        self.domain = d # Remember working domain
+                        return payload
+                    failure['invalid_response'] = True
+                    log(f"⚠️ {d} 响应格式异常")
+                    continue
                 if resp.status_code in (401, 403):
                     # A rejected request must not be replayed on alternate domains.
                     # The response can be HTML or contain private details; do not echo it.
@@ -322,12 +346,19 @@ class GLaDOS:
                         'http_status': resp.status_code,
                         'reason': 'http-auth-rejected',
                     }
+                failure['http_status'] = resp.status_code
                 log(f"⚠️ {d} 返回 HTTP {resp.status_code}")
             except (requests.RequestException, ValueError) as e:
                 # InvalidHeader and other request errors may embed Cookie values.
+                if isinstance(e, requests.Timeout):
+                    failure['timed_out'] = True
+                elif isinstance(e, requests.exceptions.InvalidHeader):
+                    failure['invalid_headers'] = True
+                elif isinstance(e, ValueError):
+                    failure['invalid_response'] = True
                 log(f"⚠️ {d} 请求失败: {type(e).__name__}")
                 continue
-        return None
+        return failure
 
     def get_status(self):
         """获取状态：天数、邮箱"""
@@ -506,8 +537,10 @@ def diagnose_accounts(cookies):
             log(f'✅ 账号 {i}: 登录状态查询成功')
         elif is_non_retryable_checkin_result(result):
             log(f'❌ 账号 {i}: 会话认证被拒绝；{summarize_checkin_failure(result)}')
+        elif is_missing_api_response(result):
+            log(f'❌ 账号 {i}: 登录状态查询失败；{summarize_checkin_failure(result)}')
         else:
-            log(f'❌ 账号 {i}: 登录状态查询失败，请检查网络并重新登录更新 Cookie')
+            log(f'❌ 账号 {i}: 登录状态查询失败，请检查 API 返回分类和会话配置')
     log('只读查询通过不代表签到设备校验通过；实际签到仍需匹配浏览器 User-Agent')
     return 0 if success_cnt == len(cookies) else 1
 
@@ -545,6 +578,9 @@ def main():
         if is_non_retryable_checkin_result(res):
             # Stop all follow-up requests for this account after an explicit denial.
             g.exchange_result = '⏭️ 认证被拒绝，跳过兑换'
+        elif is_missing_api_response(res):
+            # Do not add more reads or attempt redemption during a transport outage.
+            g.exchange_result = '⏭️ 本次请求失败，跳过积分查询和兑换'
         else:
             # 2. Get Info (Refresh data)
             g.get_status()
@@ -567,15 +603,19 @@ def main():
             success_cnt += 1
 
         # 4. Result Formatting
+        account_label = str(g.email) if g.email != '?' else f'账号 {i}'
+        points_label = str(g.points) if g.points != '?' else '未获取'
+        change_label = f'({g.points_change})' if g.points_change != '?' else ''
+        days_label = f'{g.left_days} 天' if g.left_days != '?' else '未获取'
         exchange_line = ""
         if exchange_plan:
             exchange_line = f"""
     <p style="margin:8px 0; color:#000; font-size:16px;"><b>自动兑换:</b> {html.escape(g.exchange_result)}</p>"""
         results.append(f"""
 <div style="border:2px solid #333; padding:15px; margin-bottom:15px; border-radius:10px; background:#fff;">
-    <h3 style="margin:0 0 15px 0; color:#333; border-bottom:2px solid #333; padding-bottom:8px;">👤 {html.escape(str(g.email))}</h3>
-    <p style="margin:8px 0; color:#000; font-size:16px;"><b>当前积分:</b> <span style="color:#e74c3c; font-size:22px; font-weight:bold;">{g.points}</span> <span style="color:#27ae60; font-weight:bold;">({g.points_change})</span></p>
-    <p style="margin:8px 0; color:#000; font-size:16px;"><b>剩余天数:</b> <span style="font-weight:bold;">{g.left_days} 天</span></p>
+    <h3 style="margin:0 0 15px 0; color:#333; border-bottom:2px solid #333; padding-bottom:8px;">👤 {html.escape(account_label)}</h3>
+    <p style="margin:8px 0; color:#000; font-size:16px;"><b>当前积分:</b> <span style="color:#e74c3c; font-size:22px; font-weight:bold;">{html.escape(points_label)}</span> <span style="color:#27ae60; font-weight:bold;">{html.escape(change_label)}</span></p>
+    <p style="margin:8px 0; color:#000; font-size:16px;"><b>剩余天数:</b> <span style="font-weight:bold;">{html.escape(days_label)}</span></p>
     <p style="margin:8px 0; color:#000; font-size:16px;"><b>签到结果:</b> {html.escape(str(msg))}</p>{exchange_line}
     <div style="margin-top:15px; padding:12px; background:#f0f0f0; border-radius:8px; border:1px solid #ccc;">
         <p style="margin:0 0 8px 0; color:#333; font-weight:bold; font-size:15px;">🎁 兑换选项:</p>
@@ -599,9 +639,12 @@ def main():
     tg_chat_id = os.environ.get("TELEGRAM_CHAT_ID")
     
     if ptoken or (tg_token and tg_chat_id):
-        title = f"GLaDOS签到: 成功{success_cnt}/{len(cookies)}"
+        outcome = '本次运行成功' if success_cnt == len(cookies) else '本次运行失败'
+        title = f"GLaDOS签到: {outcome} {success_cnt}/{len(cookies)}"
         content = "".join(results)
-        content += f"<br><small>时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</small>"
+        if success_cnt < len(cookies):
+            content += '<p>以上仅反映本次运行。失败账号的今日签到状态未知，请结合当天其他成功运行或官网签到日历核对。</p>'
+        content += f"<br><small>时间（北京时间 UTC+8）: {beijing_time()}</small>"
         
         if ptoken:
             pushplus(ptoken, title, content)
