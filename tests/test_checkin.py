@@ -286,7 +286,11 @@ class DiagnosticTests(unittest.TestCase):
         cookie = 'gld:sess=private-cookie; gld:sess.sig=private-signature'
         request_get.side_effect = checkin.requests.exceptions.InvalidHeader(cookie)
 
-        self.assertIsNone(checkin.GLaDOS(cookie).req('GET', '/api/user/status'))
+        result = checkin.GLaDOS(cookie).req('GET', '/api/user/status')
+        self.assertTrue(result['request_failed'])
+        self.assertTrue(result['invalid_headers'])
+        self.assertNotIn('private-cookie', str(result))
+        self.assertNotIn('private-signature', str(result))
 
         printed = str(log.call_args_list)
         self.assertIn('InvalidHeader', printed)

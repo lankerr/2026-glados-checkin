@@ -175,11 +175,11 @@ class ServerChanMainTests(OfflineTestCase):
         serverchan.assert_called_once()
         key, title, body = serverchan.call_args.args
         self.assertEqual(key, SENDKEY)
-        self.assertIn('成功1/1', title)
+        self.assertEqual(title, 'GLaDOS签到: 本次运行成功 1/1')
         self.assertIn('synthetic@example.test', body)
         self.assertIn('500', body)
         self.assertIn('99', body)
-        self.assertIn('时间:', body)
+        self.assertIn('时间（北京时间 UTC+8）:', body)
         pushplus.assert_not_called()
         telegram.assert_not_called()
 
@@ -209,7 +209,8 @@ class ServerChanMainTests(OfflineTestCase):
 
         self.assertEqual(exit_code, 1)
         serverchan.assert_called_once()
-        self.assertIn('成功0/1', serverchan.call_args.args[1])
+        self.assertEqual(serverchan.call_args.args[1], 'GLaDOS签到: 本次运行失败 0/1')
+        self.assertIn('今日签到状态未知', serverchan.call_args.args[2])
 
     def test_exchange_success_or_failure_notifies_even_in_fail_only(self):
         for result in ('🎁 兑换成功 +100天', '⚠️ 兑换失败(Network Error)'):
