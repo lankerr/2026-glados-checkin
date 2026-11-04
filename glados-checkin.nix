@@ -46,6 +46,12 @@ in
       default = null;
       description = "PushPlus Token for notifications.";
     };
+
+    serverchanSendkey = mkOption {
+      type = types.nullOr types.str;
+      default = null;
+      description = "ServerChan SendKey for notifications (Turbo or ServerChan 3).";
+    };
   };
 
   config = mkIf cfg.enable {
@@ -66,6 +72,9 @@ in
       })
       // (optionalAttrs (cfg.pushplusToken != null) {
         PUSHPLUS_TOKEN = cfg.pushplusToken;
+      })
+      // (optionalAttrs (cfg.serverchanSendkey != null) {
+        SERVERCHAN_SENDKEY = cfg.serverchanSendkey;
       });
 
       serviceConfig = {
