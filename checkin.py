@@ -7,7 +7,7 @@
 - 全自动签到
 - 精准获取当前积分 (Points)
 - 积分达标自动兑换会员天数（默认 500 分兑换 100 天，可配置/关闭）
-- PushPlus 微信推送（包含积分、剩余天数、签到结果、兑换结果）
+- PushPlus / Server酱 微信推送（包含积分、剩余天数、签到结果、兑换结果）
 - 智能多域名切换 (优先 glados.cloud)
 - 支持 Cookie-Editor 导出格式
 """
@@ -470,6 +470,47 @@ def pushplus(token, title, content):
         log(f"❌ PushPlus 推送失败: {e}")
         return False
 
+def serverchan_push(sendkey, title, content):
+    """发送 Server酱通知，兼容 Turbo 与 Server酱³ SendKey。"""
+    sendkey = (sendkey or "").strip()
+    if not sendkey:
+        return False
+
+    # 与官方 SDK 保持相同的 SendKey 路由，无需增加依赖。
+    # https://sct.ftqq.com/docs/integrations/python/
+    if sendkey.startswith("sctp"):
+        match = re.match(r"sctp([0-9]+)t", sendkey)
+        if not match:
+            log("❌ Server酱 推送失败: Server酱³ SendKey 格式无效")
+            return False
+        url = f"https://{match.group(1)}.push.ft07.com/send/{sendkey}.send"
+    else:
+        url = f"https://sctapi.ftqq.com/{sendkey}.send"
+
+    # 复用完整的多账号报告；先去标签再解码，保留正文里的 HTML 转义字符。
+    text = re.sub(r"<br\s*/?>", "\n", content, flags=re.IGNORECASE)
+    text = re.sub(r"</(?:h[1-6]|p|div)\s*>", "\n", text, flags=re.IGNORECASE)
+    text = re.sub(r"<[^>]+>", "", text)
+    lines = [line.strip() for line in html.unescape(text).splitlines()]
+    desp = "  \n".join(line for line in lines if line)
+
+    try:
+        response = requests.post(url, json={'title': title, 'desp': desp}, timeout=10)
+        response.raise_for_status()
+        payload = response.json()
+        if not isinstance(payload, dict) or payload.get('code') != 0:
+            code = payload.get('code') if isinstance(payload, dict) else None
+            detail = f"code={code}" if type(code) is int else "接口返回无效响应"
+            log(f"❌ Server酱 推送失败: {detail}")
+            return False
+        log("✅ Server酱 推送成功")
+        return True
+    except (requests.RequestException, ValueError) as e:
+        # HTTP 异常可能包含带 SendKey 的请求 URL，不输出原始异常或响应正文。
+        log(f"❌ Server酱 推送失败: {type(e).__name__}")
+        return False
+
+
 def telegram_push(token, chat_id, title, content):
     if not token or not chat_id: return
     try:
@@ -635,10 +676,11 @@ def main():
         return 0
 
     ptoken = os.environ.get("PUSHPLUS_TOKEN")
+    serverchan_sendkey = os.environ.get("SERVERCHAN_SENDKEY", "").strip()
     tg_token = os.environ.get("TELEGRAM_BOT_TOKEN")
     tg_chat_id = os.environ.get("TELEGRAM_CHAT_ID")
     
-    if ptoken or (tg_token and tg_chat_id):
+    if ptoken or serverchan_sendkey or (tg_token and tg_chat_id):
         outcome = '本次运行成功' if success_cnt == len(cookies) else '本次运行失败'
         title = f"GLaDOS签到: {outcome} {success_cnt}/{len(cookies)}"
         content = "".join(results)
@@ -648,6 +690,8 @@ def main():
         
         if ptoken:
             pushplus(ptoken, title, content)
+        if serverchan_sendkey:
+            serverchan_push(serverchan_sendkey, title, content)
         if tg_token and tg_chat_id:
             telegram_push(tg_token, tg_chat_id, title, content)
 
