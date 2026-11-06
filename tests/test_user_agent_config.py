@@ -176,7 +176,7 @@ class UserAgentFlowTests(unittest.TestCase):
 
 class UserAgentWorkflowTests(unittest.TestCase):
     def test_workflow_falls_back_to_secret_without_changing_variable_precedence(self):
-        workflow = (Path(__file__).resolve().parents[1] / '.github/workflows/checkin.yml').read_text()
+        workflow = (Path(__file__).resolve().parents[1] / '.github/workflows/checkin.yml').read_text(encoding='utf-8')
         lines = [line.strip() for line in workflow.splitlines() if 'GLADOS_USER_AGENT:' in line]
         self.assertEqual(lines, [
             'GLADOS_USER_AGENT: ${{ vars.GLADOS_USER_AGENT || secrets.GLADOS_USER_AGENT }}'
