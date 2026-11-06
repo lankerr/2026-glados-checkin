@@ -13,12 +13,15 @@
 """
 
 import html
+import hashlib
 import json
+import math
 import os
 import re
 import sys
 import time
 from datetime import datetime, timedelta, timezone
+from urllib.parse import urlsplit
 
 import requests
 
@@ -55,6 +58,10 @@ NORMAL_CHECKIN_MESSAGES = (
     "checkin repeats! please try tomorrow",
     "today's observation logged",
 )
+
+# The current official console obtains a fresh challenge, waits at least 2.5 s,
+# and sends SHA-256(nonce + ".glados-observe-v1") with the check-in request.
+CHECKIN_CHALLENGE_DELAY = 2.5
 
 # 积分兑换计划 (#11)：消耗 points 积分兑换 days 天会员。
 # 通过环境变量 EXCHANGE_PLAN 选择，默认 plan500（500 分兑换 100 天），
@@ -266,7 +273,11 @@ def summarize_checkin_failure(result):
 
     reason = str(result.get('reason', '')).strip().lower()
     message = str(result.get('message', '')).strip().lower()
-    if result.get('request_failed') is True:
+    if reason == 'checkin-challenge-unavailable':
+        label = '未获取有效签到验证，本次未提交签到，请稍后重试'
+    elif reason == 'checkin-challenge-expired':
+        label = '签到验证已过期，本次未提交签到，请稍后重试'
+    elif result.get('request_failed') is True:
         if result.get('invalid_headers') is True:
             label = '请求头格式无效，请检查 Cookie 和 User-Agent 格式'
         elif result.get('invalid_response') is True:
@@ -366,13 +377,13 @@ class GLaDOS:
                 "2026-09 新版接口可能返回“没有权限”"
             )
 
-    def req(self, method, path, data=None, form=False):
+    def req(self, method, path, data=None, form=False, domains=None):
         """带自动域名切换的请求；form=True 时以表单提交（兑换接口要求）"""
         # Validate local configuration before the retry loop or any network request.
         browser_headers = get_browser_headers()
         # Keep only fixed, non-secret failure metadata after all domains fail.
         failure = {'request_failed': True, 'reason': 'request-failed'}
-        for d in DOMAINS:
+        for d in DOMAINS if domains is None else domains:
             try:
                 url = f"{d}{path}"
                 h = HEADERS.copy()
@@ -463,7 +474,33 @@ class GLaDOS:
 
     def checkin(self):
         """执行签到"""
-        return self.req('POST', '/api/user/checkin', {'token': 'glados.cloud'})
+        challenge = self.req('GET', '/api/user/checkin/challenge')
+        if is_non_retryable_checkin_result(challenge) or is_missing_api_response(challenge):
+            return challenge
+        nonce = challenge.get('nonce')
+        ttl = challenge.get('ttl', 300000)
+        if (
+            challenge.get('code') != 0
+            or not isinstance(nonce, str) or not 0 < len(nonce) <= 4096
+            or type(ttl) not in (int, float)
+            or (type(ttl) is float and not math.isfinite(ttl))
+            or ttl <= CHECKIN_CHALLENGE_DELAY * 1000
+        ):
+            return {'request_failed': True, 'reason': 'checkin-challenge-unavailable'}
+
+        # A nonce belongs to the origin which issued it. Do not replay the POST
+        # on another domain; the outer retry obtains a fresh challenge instead.
+        domain = self.domain
+        received_at = time.monotonic()
+        proof = hashlib.sha256((nonce + '.glados-observe-v1').encode('utf-8')).hexdigest()
+        time.sleep(CHECKIN_CHALLENGE_DELAY)
+        if (time.monotonic() - received_at) * 1000 >= ttl:
+            return {'request_failed': True, 'reason': 'checkin-challenge-expired'}
+        return self.req('POST', '/api/user/checkin', {
+            'token': urlsplit(domain).hostname,
+            'nonce': nonce,
+            'proof': proof,
+        }, domains=(domain,))
 
     def exchange(self, plan):
         """兑换会员天数：表单提交 planType (plan100/plan200/plan500)"""

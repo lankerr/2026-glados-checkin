@@ -115,14 +115,21 @@ class UserAgentFlowTests(unittest.TestCase):
                 for call in (get, post):
                     call.return_value = mock.Mock(status_code=200)
                     call.return_value.json.return_value = {'code': 0, 'data': {'leftDays': 1}}
+                get.side_effect = [
+                    get.return_value,
+                    mock.Mock(status_code=200, **{'json.return_value': {
+                        'code': 0, 'nonce': 'synthetic-nonce', 'ttl': 300000,
+                    }}),
+                ]
                 client = checkin.GLaDOS(COOKIE)
                 client.req('GET', '/api/user/status')
-                client.checkin()
+                with mock.patch('checkin.time.sleep'):
+                    client.checkin()
                 client.exchange('plan500')
                 for call in get.call_args_list + post.call_args_list:
                     self.assertEqual(call.kwargs['headers']['User-Agent'], USER_AGENT)
                     self.assertEqual(call.kwargs['headers']['Cookie'], COOKIE)
-                self.assertEqual(get.call_count, 1)
+                self.assertEqual(get.call_count, 2)
                 self.assertEqual(post.call_count, 2)
                 self.assertNotIn('Content-Type', post.call_args.kwargs['headers'])
 
