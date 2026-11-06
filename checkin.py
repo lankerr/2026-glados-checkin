@@ -61,7 +61,8 @@ NORMAL_CHECKIN_MESSAGES = (
 
 # The current official console obtains a fresh challenge, waits at least 2.5 s,
 # and sends SHA-256(nonce + ".glados-observe-v1") with the check-in request.
-CHECKIN_CHALLENGE_DELAY = 2.5
+# Allow a small margin beyond that minimum, as in the reference script in #28.
+CHECKIN_CHALLENGE_DELAY = 2.7
 
 # 积分兑换计划 (#11)：消耗 points 积分兑换 days 天会员。
 # 通过环境变量 EXCHANGE_PLAN 选择，默认 plan500（500 分兑换 100 天），
@@ -84,7 +85,7 @@ def beijing_time():
 
 
 def log(msg):
-    print(f"[{beijing_time()} 北京时间] {msg}")
+    print(f"[{beijing_time()} 北京时间] {msg}", flush=True)
 
 def extract_cookie(raw: str):
     """提取 Cookie，支持请求头及 Cookie-Editor JSON 导出格式。"""

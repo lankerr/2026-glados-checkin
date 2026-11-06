@@ -24,7 +24,7 @@ class ChallengeTests(unittest.TestCase):
             patch.start()
             self.addCleanup(patch.stop)
 
-    @mock.patch('checkin.time.monotonic', side_effect=[100, 102.5])
+    @mock.patch('checkin.time.monotonic', side_effect=[100, 102.7])
     @mock.patch('checkin.time.sleep')
     @mock.patch('checkin.requests.post')
     @mock.patch('checkin.requests.get')
@@ -36,7 +36,7 @@ class ChallengeTests(unittest.TestCase):
 
         get.assert_called_once()
         self.assertEqual(get.call_args.args[0], checkin.DOMAINS[0] + '/api/user/checkin/challenge')
-        sleep.assert_called_once_with(2.5)
+        sleep.assert_called_once_with(2.7)
         post.assert_called_once()
         self.assertEqual(post.call_args.args[0], checkin.DOMAINS[0] + '/api/user/checkin')
         self.assertEqual(post.call_args.kwargs['json'], {
@@ -131,7 +131,46 @@ class ChallengeTests(unittest.TestCase):
         sent = [call.kwargs['json'] for call in post.call_args_list]
         self.assertNotEqual(sent[0]['nonce'], sent[1]['nonce'])
         self.assertNotEqual(sent[0]['proof'], sent[1]['proof'])
-        self.assertEqual(sleep.call_args_list, [mock.call(2.5), mock.call(60), mock.call(2.5)])
+        self.assertEqual(sleep.call_args_list, [mock.call(2.7), mock.call(60), mock.call(2.7)])
+
+    @mock.patch('checkin.time.sleep')
+    @mock.patch('checkin.requests.post')
+    @mock.patch('checkin.requests.get')
+    def test_ttl_must_cover_the_wait_including_its_margin(self, get, post, sleep):
+        for ttl in (2501, 2699, 2700):
+            with self.subTest(ttl=ttl):
+                get.return_value = response({'code': 0, 'nonce': NONCE, 'ttl': ttl})
+                result = checkin.GLaDOS(COOKIE).checkin()
+                self.assertEqual(result['reason'], 'checkin-challenge-unavailable')
+        sleep.assert_not_called()
+        post.assert_not_called()
+
+    @mock.patch('checkin.time.monotonic', side_effect=[0, 2.7])
+    @mock.patch('checkin.time.sleep')
+    @mock.patch('checkin.requests.post')
+    @mock.patch('checkin.requests.get')
+    def test_ttl_just_above_wait_allows_submission_before_expiry(self, get, post, sleep, timer):
+        get.return_value = response({'code': 0, 'nonce': NONCE, 'ttl': 2701})
+        post.return_value = response({'code': 0})
+
+        result = checkin.GLaDOS(COOKIE).checkin()
+
+        self.assertTrue(checkin.is_normal_checkin_result(result))
+        sleep.assert_called_once_with(2.7)
+        post.assert_called_once()
+
+    @mock.patch('checkin.time.monotonic', side_effect=[0, 3])
+    @mock.patch('checkin.time.sleep')
+    @mock.patch('checkin.requests.post')
+    @mock.patch('checkin.requests.get')
+    def test_challenge_at_exact_expiry_after_wait_is_not_submitted(self, get, post, sleep, timer):
+        get.return_value = response({'code': 0, 'nonce': NONCE, 'ttl': 3000})
+
+        result = checkin.GLaDOS(COOKIE).checkin()
+
+        self.assertEqual(result['reason'], 'checkin-challenge-expired')
+        sleep.assert_called_once_with(2.7)
+        post.assert_not_called()
 
 
 if __name__ == '__main__':
