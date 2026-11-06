@@ -33,7 +33,7 @@ class TransientFailureTests(unittest.TestCase):
             checkin.requests.ReadTimeout(COOKIE) for _ in checkin.DOMAINS[1:]
         ]
 
-        result = checkin.GLaDOS(COOKIE).checkin()
+        result = checkin.GLaDOS(COOKIE).req('POST', '/api/user/checkin')
 
         self.assertEqual(post.call_count, len(checkin.DOMAINS))
         response.json.assert_not_called()
@@ -55,7 +55,7 @@ class TransientFailureTests(unittest.TestCase):
         ok.json.return_value = {'code': 0, 'message': 'Checkin! Got 11 Points'}
         post.side_effect = [unavailable, ok]
 
-        result = checkin.GLaDOS(COOKIE).checkin()
+        result = checkin.GLaDOS(COOKIE).req('POST', '/api/user/checkin')
 
         self.assertEqual(result, ok.json.return_value)
         self.assertNotIn('request_failed', result)
@@ -73,7 +73,7 @@ class TransientFailureTests(unittest.TestCase):
                     response.json.return_value = body
                 post.return_value = response
 
-                result = checkin.GLaDOS(COOKIE).checkin()
+                result = checkin.GLaDOS(COOKIE).req('POST', '/api/user/checkin')
 
                 self.assertTrue(result['invalid_response'])
                 self.assertIn('响应格式异常', checkin.summarize_checkin_failure(result))
