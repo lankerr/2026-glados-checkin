@@ -835,6 +835,8 @@ GitHub 的 schedule 不是实时调度器：高负载时可能延迟，极端情
 
 同时感谢 [@LxFairy](https://github.com/LxFairy) 提交上游同步与冲突处理 PR（[#8](https://github.com/lankerr/2026-glados-checkin/pull/8)、[#9](https://github.com/lankerr/2026-glados-checkin/pull/9)，未合并），以及在 Issues 中提供报错日志、排查线索和复测反馈的用户。
 
+感谢 [@chengchang1987-cloud](https://github.com/chengchang1987-cloud) 在 [Issue #28](https://github.com/lankerr/2026-glados-checkin/issues/28) 提供积分流水、challenge 排查证据和[参考脚本](https://github.com/lankerr/2026-glados-checkin/issues/28#issuecomment-6676702004)。参考脚本的核心 proof 算法与已合并的 #31 一致；本次进一步采纳日志即时刷新（`flush=True`）及 2.7 秒等待时间（在 2.5 秒基础上增加 0.2 秒余量）。原有的 nonce/TTL 校验、同域提交、失败时不回退旧签到流程、User-Agent 兼容和推送行为均保留。这两项改进不代表首次签到奖励已恢复，仍需以下一次首次签到返回及实际积分入账核验。
+
 特别感谢 @badpinkman 对 2026 年 9 月认证故障的排查与修复，帮助本项目恢复正常签到。
 
 ---

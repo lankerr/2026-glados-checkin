@@ -47,7 +47,7 @@ class AuthFailureTests(OfflineTestCase):
                 self.assertEqual(post.call_count, 1)
                 self.assertEqual(get.call_count, 1)
                 response.json.assert_not_called()
-                sleep.assert_called_once_with(2.5)
+                sleep.assert_called_once_with(2.7)
 
     def test_explicit_auth_denial_overrides_success_code_or_message(self):
         for result in (
