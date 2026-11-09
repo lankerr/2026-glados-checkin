@@ -7,12 +7,18 @@ on:
   workflow_dispatch:
     inputs:
       dispatch_source:
-        description: 手动运行请选择 manual；外部定时器填写 external
-        required: true
+        description: 手动运行请选择 manual；外部定时器可不填（默认按 external）
+        required: false
+        default: external
         type: choice
         options:
           - manual
           - external
+      diagnose_only:
+        description: 只检查 Cookie 是否可读取账号状态，不签到、不兑换、不推送
+        required: false
+        default: false
+        type: boolean
 
 concurrency:
   group: glados-checkin
@@ -48,7 +54,12 @@ jobs:
         timeout-minutes: 8
         env:
           GLADOS_COOKIE: ${{ secrets.GLADOS_COOKIE }}
+          # Must match the browser that created the current gld:sess.
+          # Prefer the repository Variable; accept a same-named Secret for compatibility.
+          GLADOS_USER_AGENT: ${{ vars.GLADOS_USER_AGENT || secrets.GLADOS_USER_AGENT }}
+          CHECKIN_DIAGNOSTIC_ONLY: ${{ inputs.diagnose_only && 'true' || 'false' }}
           PUSHPLUS_TOKEN: ${{ secrets.PUSHPLUS_TOKEN }}
+          SERVERCHAN_SENDKEY: ${{ secrets.SERVERCHAN_SENDKEY }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           PUSH_LEVEL: ${{ vars.PUSH_LEVEL || 'fail_only' }}
