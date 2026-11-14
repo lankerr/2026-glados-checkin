@@ -1,12 +1,48 @@
 # 🎁 5 分钟配置 GLaDOS 自动签到
 
-> [!NOTE]
-> **免费账号积分提示（2026-11-13）：** 根据 [Issue #28 的用户反馈](https://github.com/lankerr/2026-glados-checkin/issues/28#issuecomment-6842245219)，未购买过服务的免费账号很可能受到 `Free cap max 2` 限制，每次签到只有少量积分（反馈为最多 2 分），不一定是脚本失效；不能保证所有账号都能获得十几分。
+> [!WARNING]
+> **状态公告（2026-11-14，北京时间）：当前存在 Turnstile 验证拒绝，尚未验证通用自动签到修复。**
 >
-> 如有付费使用需求，建议先核对官网当前套餐和积分规则，再考虑购买一个适合自己的收费方案。以上为用户反馈，维护者尚未独立验证规则、适用范围及付款后的效果，不承诺充值后获得特定积分；实际奖励以官网账户提示和到账记录为准。
+> 维护者此前确有首次签到获得 14 分的记录，但 11 月 14 日的自动运行失败；同日一次实际测试确认 `code=5, reason=turnstile`，积分未增长。**单元测试通过、状态查询正常或返回“今日已签到”，均不能单独证明自动首次签到成功。**
+>
+> 下方旧版恢复记录仅描述当时结果，不代表当前持续可用。请先阅读以下公告，勿为排查反复签到或购买套餐。
+
+<a id="status-2026-11-14"></a>
+## 📢 2026-11-14 签到状态与社区反馈公告
+
+本公告区分维护者实测与社区自述，不将个人结果当作所有账号的规则。当前应分别核对：**签到请求是否成功、实际入账多少积分、是否遇到验证拒绝**。
+
+### 维护者已核实的情况
+
+- **历史成功：**[11 月 13 日的首次签到运行](https://github.com/lankerr/2026-glados-checkin/actions/runs/43253941633)实际返回 `Checkin! Got 14 Points`，余额为 15。
+- **当前失败：**[11 月 14 日 09:31 的自动运行](https://github.com/lankerr/2026-glados-checkin/actions/runs/43541131946)中，92 项单元测试通过，但实际签到重试后返回 `code=5`，没有成功奖励记录。
+- **单次诊断：**同日约 13:27，维护者在状态、积分查询正常后仅提交一次签到，脱敏结果为 `code=5, reason=turnstile`，消息包含 `Cloudflare verification failed`；前后余额均为 15，最新变动仍是前一日 +14。此项是维护者实测记录，未公开原始响应或凭据；已在[相关讨论](https://github.com/Devilstore/Glados-Railgun-checkin/issues/60#issuecomment-6872400475)说明。
+- **适配范围：**此前已经完成 nonce/proof challenge 流程适配（见 [PR #33](https://github.com/lankerr/2026-glados-checkin/pull/33)）。它不等于现在的 Cloudflare Turnstile 已通过或已解决。当前错误摘要仅显示部分白名单原因，日志未显示 `reason` 不代表服务端没有返回该字段。
+- 本公告是状态说明，**没有发布 Turnstile 修复**；也不提供或保证绕过验证的方法。
+
+### 社区反馈：有来源，但不等于独立复测
+
+| 反馈 | 原始来源 | 能说明与不能说明的内容 |
+| --- | --- | --- |
+| 自动脚本两个账号失败；网页手动通过验证后，其中一个无购买记录的账号入账 2 分 | [Issue #37：charmok](https://github.com/lankerr/2026-glados-checkin/issues/37#issuecomment-6873121827) | 用户自述的手动/自动对照；环境不同，不能确定单一原因或证明自动修复。 |
+| 自述实际 12 分、前一日有购买记录；明确先手动签到，再运行脚本 | [Issue #28：补充说明](https://github.com/lankerr/2026-glados-checkin/issues/28#issuecomment-6874124849) | 后续脚本返回 `Today's observation logged`，不能证明脚本完成当日首次签到或自动获得 12 分。 |
+| 自述提交官方 ticket 后问题修复并获 20 分，当时准备次日观察自动签到 | [Issue #37：工单反馈](https://github.com/lankerr/2026-glados-checkin/issues/37#issuecomment-6850764702) | 截至本公告核对时未看到该用户确认次日自动恢复；不知道客服具体操作，不能保证补分或恢复。 |
+| 手动签到页面显示 `Free cap max 2` | [Issue #28：截图反馈](https://github.com/lankerr/2026-glados-checkin/issues/28#issuecomment-6842245219) | 支持存在此账号页面提示，不代表所有账户完整奖励规则；购买历史与套餐标签不能等同。 |
+| 其他项目也报告 Cloudflare 拒绝，其中有 `code=5, reason=turnstile` | [checkin #75](https://github.com/integration-intelligent/checkin/issues/75)、[Glados-Railgun #60](https://github.com/Devilstore/Glados-Railgun-checkin/issues/60)、[MoviePilot #82](https://github.com/madrays/MoviePilot-Plugins/issues/82) | 是跨项目公开反馈，不代表所有账号受影响，也不是已验证的通用修复。 |
+
+**关于购买：**已有自称付费账号仍低分或遇到验证的[反馈](https://github.com/lankerr/2026-glados-checkin/issues/37#issuecomment-6847563354)。即使付款解除某项积分上限，也不等于保证固定积分或解决 Turnstile。不要仅为排查而购买，也不要把“手动成功后脚本显示已签到”当作自动恢复证据。
+
+### 目前如何核对与反馈
+
+- 以官网签到记录和积分流水核对实际入账，不只看 Actions 绿灯、HTTP 200 或状态查询成功。
+- 遇到验证拒绝时，可按官网正常人工流程处理或联系官方支持；不要为了收集数据重复签到、购买套餐或频繁切换网络。
+- 欢迎在 [Issue #37 的脱敏数据征集](https://github.com/lankerr/2026-glados-checkin/issues/37#issuecomment-6872387904)自愿补充已有的时间/时区、脚本版本、手动或自动、脱敏错误及积分变化。购买状态、工单结果可以不填。
+- **不要公开 Cookie、Token、密码、验证码、nonce/proof、完整请求头、HAR 或含邮箱/账号/订单信息的截图。**
+
+---
 
 > [!IMPORTANT]
-> **✅ GLaDOS 自动签到已恢复（2026-09-30）。** 新版认证修复已发布，维护者仓库已验证签到与 PushPlus 通知正常，[查看恢复公告和实测记录](https://github.com/lankerr/2026-glados-checkin/releases/tag/v2026.9.30)。
+> **历史恢复记录（2026-09-30，非当前可用性保证）。** 新版认证修复已发布，维护者仓库已验证签到与 PushPlus 通知正常，[查看恢复公告和实测记录](https://github.com/lankerr/2026-glados-checkin/releases/tag/v2026.9.30)。
 >
 > Fork 用户请先 **Sync fork → Update branch**。**已能正常签到的用户无需更换 Cookie。**
 >
@@ -18,9 +54,9 @@
 
 <div align="center">
 
-**你不用写代码 · 不用买服务器 · 不用每天登录**
+**无需编写代码 · 无需自购服务器；当前验证限制见上方公告**
 
-**一次配置，每天 9:30 自动签到；失败自动重试**
+**配置后每天 9:30 自动尝试签到；不保证通过服务端验证**
 
 ---
 
@@ -28,7 +64,7 @@
 
 | 优势                  | 说明                                                |
 | --------------------- | --------------------------------------------------- |
-| ✅ **2026年验证可用** | 持续通过 Actions 日志和单元测试验证                 |
+| ⚠️ **当前状态** | 存在 Turnstile 拒绝；历史成功和单元测试不代表当前签到成功 |
 | ✅ **结果可信**       | 正确区分签到完成、重复签到和真实失败                |
 | ✅ **新手友好**       | 全程图解，不会也能照着做                            |
 | ✅ **作者持续维护**   | 遇到问题提Issue，作者很乐意帮忙                     |
@@ -736,7 +772,7 @@ GitHub 官方规则是：公开仓库连续 **60 天没有仓库活动**时，�
 <details>
 <summary><b>Q: 显示 "Checkin Repeats! Please Try Tomorrow" 是什么意思？</b></summary>
 
-这表示**今天已经成功签到过了**！这是正常的成功响应，说明签到功能正常工作。
+这表示服务端认为**今天已经签到过**。它可能出现在网页手动签到之后；不能单凭此响应证明脚本完成了当日首次签到或新增积分，请核对积分流水。
 
 </details>
 
@@ -848,6 +884,11 @@ GitHub 的 schedule 不是实时调度器：高负载时可能延迟，极端情
 
 ## 📝 更新日志
 
+### 2026-11-14：签到状态公告（文档更新）
+
+- 在 README 顶部区分 Turnstile 拒绝实测、历史成功、手动/重复签到及工单反馈。
+- 添加来源和脱敏数据征集入口；本次没有修改签到代码或发布验证修复。
+
 ### 2026-09-30：新版会话与设备校验修复
 
 - 合并 [@badpinkman 的 PR #18](https://github.com/lankerr/2026-glados-checkin/pull/18)，适配 `gld:sess` / `gld:sess.sig` 和 `GLADOS_USER_AGENT`。
@@ -898,7 +939,7 @@ MIT
 
 **Made with ❤️ for GLaDOS users in 2026**
 
-**🔧 本项目最近一次维护验证：2026-11-06**
+**🔧 文档状态更新：2026-11-14；签到可用性见顶部公告**
 
 **⭐ Star 一下，支持作者持续更新！⭐**
 
