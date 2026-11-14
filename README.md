@@ -17,8 +17,20 @@
 - **历史成功：**[11 月 13 日的首次签到运行](https://github.com/lankerr/2026-glados-checkin/actions/runs/43253941633)实际返回 `Checkin! Got 14 Points`，余额为 15。
 - **当前失败：**[11 月 14 日 09:31 的自动运行](https://github.com/lankerr/2026-glados-checkin/actions/runs/43541131946)中，92 项单元测试通过，但实际签到重试后返回 `code=5`，没有成功奖励记录。
 - **单次诊断：**同日约 13:27，维护者在状态、积分查询正常后仅提交一次签到，脱敏结果为 `code=5, reason=turnstile`，消息包含 `Cloudflare verification failed`；前后余额均为 15，最新变动仍是前一日 +14。此项是维护者实测记录，未公开原始响应或凭据；已在[相关讨论](https://github.com/Devilstore/Glados-Railgun-checkin/issues/60#issuecomment-6872400475)说明。
-- **适配范围：**此前已经完成 nonce/proof challenge 流程适配（见 [PR #33](https://github.com/lankerr/2026-glados-checkin/pull/33)）。它不等于现在的 Cloudflare Turnstile 已通过或已解决。当前错误摘要仅显示部分白名单原因，日志未显示 `reason` 不代表服务端没有返回该字段。
-- 本公告是状态说明，**没有发布 Turnstile 修复**；也不提供或保证绕过验证的方法。
+- **适配范围与最新诊断改进：**此前已经完成 nonce/proof challenge 流程适配（见 [PR #33](https://github.com/lankerr/2026-glados-checkin/pull/33)），但它不等于现在的 Cloudflare Turnstile 已通过或已解决。最新 `checkin.py` 已完成三项修正：① 识别 `reason=turnstile`（及 `Cloudflare verification failed`）时明确输出原因并**立即停止无意义重试**、跳过自动兑换；② 新增**“本次签到入账”与今日积分流水的交叉核对**，与“最近一笔历史流水”严格区分；③ 保留真实非零小数（如 `+1.5`），不再简单截断小数部分。
+- 本公告是状态说明，**没有发布绕过 Turnstile 人机验证的方法**；遇到人机验证拦截时请通过官网浏览器手动签到。
+
+### 📊 关键核查：返回的“加多少分”等于真正的实际入账吗？
+
+针对大家关心的“接口/通知显示的加分是否等于真正到账积分”，核查结论如下：
+
+1. **首次签到真正成功且未触发上限时，两者一致：**
+   维护者账号实测记录中，11 月 12 日返回 `Got 11 Points`（`490 → 501`，随后自动兑换 `-500` 剩 `1` 分）、11 月 13 日返回 `Got 14 Points`（`/api/user/points` 流水新增 `+14.0`，余额 `1 → 15`），接口返回的 `Got X Points` 与积分流水实际入账完全一致。
+2. **出现“看到的加分 ≠ 本次真正入账”的四类已核实原因：**
+   - **① 旧版通知把“历史最后一笔流水”显示在当前积分旁（已修复）：** 当签到失败（如 `code=5, reason=turnstile`，实际入账 `0` 分）或重复签到时，`/api/user/points` 返回的 `history[0]` 仍是上一笔历史记录（例如前一天的 `+14`）。**Sync fork 更新到最新代码后**，通知会分别展示**“本次签到入账”**（自动比对今日北京日期流水）和**“最近一笔积分变动”**（附具体时间并标明“历史记录，不代表本次新增”）。
+   - **② 分项加成合计（`breakdown`）≠ 封顶后实际入账（`Free cap max 2`）：** 根据 [Issue #37 实测记录](https://github.com/lankerr/2026-glados-checkin/issues/37#issuecomment-6873121827) 与 [Issue #28 截图](https://github.com/lankerr/2026-glados-checkin/issues/28#issuecomment-6842245219)，无购买记录账号触发 `Free cap max 2` 时，即便页面分项为 `Base +2.7` 或按光缆/连签规则合计应得更高分，服务端最终结算也会封顶为 `+2` 分。**真实到账一律以 `/api/user/points` 今日积分流水的 `change` 为准**；若分项合计或接口返回分值与今日流水不一致，新版脚本会在日志和通知中直接标注差异。
+   - **③ 先网页手动签到、再运行自动脚本（`Today's observation logged`）：** 脚本返回 `code=1` 仅代表今日已有记录，**本次脚本运行新增为 `0` 分**；今日流水里的加分来自此前网页手动签到，不能算作脚本自动签到得分。
+   - **④ 首次签到入账后立即触发自动兑换（`-500`）：** 达标自动兑换后最新一笔流水会变成 `-500`、总余额下降；新版脚本会在兑换前先核对并记录本次签到入账分值，不再被兑换流水覆盖。
 
 ### 社区反馈：有来源，但不等于独立复测
 

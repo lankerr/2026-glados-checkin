@@ -1,9 +1,13 @@
 import os
 import unittest
+from datetime import datetime, timedelta, timezone
 from unittest import mock
 import checkin
 
 COOKIE = 'gld:sess=fake; gld:sess.sig=fake'
+FIXED_NOW = datetime(2026, 11, 14, 16, 0, 0, tzinfo=timezone(timedelta(hours=8)))
+TODAY_MS = int(datetime(2026, 11, 14, 9, 30, 0, tzinfo=timezone(timedelta(hours=8))).timestamp() * 1000)
+
 
 class PointsHistoryTests(unittest.TestCase):
     def test_history_timestamp_is_explicit_and_resets_when_history_empty(self):
@@ -16,6 +20,19 @@ class PointsHistoryTests(unittest.TestCase):
         client.req.return_value['history'] = []
         client.get_points()
         self.assertEqual(client.points_change, '?')
+
+    def test_decimal_points_and_changes_are_not_truncated(self):
+        client = checkin.GLaDOS(COOKIE)
+        client.req = mock.Mock(return_value={
+            'points': '15.5',
+            'history': [{'change': '1.5', 'time': TODAY_MS}],
+            'plans': {'plan100': {'points': 100, 'days': 10}},
+        })
+        with mock.patch('checkin.beijing_now', return_value=FIXED_NOW):
+            self.assertTrue(client.get_points())
+        self.assertEqual(client.points, '15.5')
+        self.assertEqual(client.points_change, '+1.5')
+        self.assertIn('差84.5分', client.exchange_info)
 
     def test_invalid_time_is_not_echoed(self):
         for value in ['secret', float('inf'), True, 10**18, None]:
@@ -36,7 +53,8 @@ class PointsHistoryTests(unittest.TestCase):
             client.get_status = mock.Mock(return_value=True)
             client.req = mock.Mock(return_value={'points': '15', 'history': [
                 {'change': '14', 'time': 1794499249195}], 'plans': {}})
-            with mock.patch.dict(os.environ, {'GLADOS_COOKIE': COOKIE,
+            with mock.patch('checkin.beijing_now', return_value=FIXED_NOW), \
+                    mock.patch.dict(os.environ, {'GLADOS_COOKIE': COOKIE,
                     'EXCHANGE_PLAN': 'off', 'CHECKIN_MAX_ATTEMPTS': '1',
                     'PUSHPLUS_TOKEN': 'fake-token', 'PUSH_LEVEL': 'always'}, clear=True), \
                     mock.patch('checkin.GLaDOS', return_value=client), \
@@ -49,3 +67,120 @@ class PointsHistoryTests(unittest.TestCase):
                 self.assertIn('2026-11-13 00:00:49', content)
                 self.assertNotIn('(+14)', content)
                 self.assertNotIn('fake-token', content)
+
+    @mock.patch('checkin.time.sleep')
+    def test_turnstile_stops_retries_immediately_and_skips_auto_exchange(self, sleep):
+        client = checkin.GLaDOS(COOKIE)
+        client.checkin = mock.Mock(return_value={
+            'code': 5,
+            'reason': 'turnstile',
+            'message': 'Cloudflare verification failed. Nothing was recorded — please retry.',
+        })
+        client.get_status = mock.Mock(return_value=True)
+        client.req = mock.Mock(return_value={
+            'points': '520',
+            'history': [{'change': '14', 'time': 1794499249195}],
+            'plans': {},
+        })
+        client.exchange = mock.Mock()
+        with mock.patch('checkin.beijing_now', return_value=FIXED_NOW), \
+                mock.patch.dict(os.environ, {
+                    'GLADOS_COOKIE': COOKIE,
+                    'EXCHANGE_PLAN': 'plan500',
+                    'CHECKIN_MAX_ATTEMPTS': '3',
+                    'PUSHPLUS_TOKEN': 'fake-token',
+                    'PUSH_LEVEL': 'fail_only',
+                }, clear=True), \
+                mock.patch('checkin.GLaDOS', return_value=client), \
+                mock.patch('checkin.pushplus') as push, \
+                mock.patch('checkin.log'):
+            self.assertEqual(checkin.main(), 1)
+
+        client.checkin.assert_called_once()
+        sleep.assert_not_called()
+        client.exchange.assert_not_called()
+        content = push.call_args.args[2]
+        self.assertIn('reason=turnstile', content)
+        self.assertIn('0 分（本次未签到成功，无新增入账）', content)
+        self.assertIn('本次签到未成功，跳过兑换', content)
+
+    def test_cross_check_distinguishes_matched_capped_mismatched_and_repeat_gains(self):
+        with mock.patch('checkin.beijing_now', return_value=FIXED_NOW):
+            # 1. Exact match between checkin response and today's ledger
+            client = checkin.GLaDOS(COOKIE)
+            client.req = mock.Mock(return_value={
+                'points': '15',
+                'history': [{'change': '14.0', 'time': TODAY_MS}],
+                'plans': {},
+            })
+            client.get_points()
+            summary = checkin.summarize_current_run_gain(
+                {'code': 0, 'message': 'Checkin! Got 14 Points', 'points': 14}, True, client,
+            )
+            self.assertEqual(summary, '+14 分（已与今日积分流水核对一致）')
+
+            # 2. Breakdown sum (+2.7) capped at +2 (Free cap max 2)
+            client.req.return_value = {
+                'points': '2',
+                'history': [{'change': '2', 'time': TODAY_MS}],
+                'plans': {},
+            }
+            client.get_points()
+            summary = checkin.summarize_current_run_gain(
+                {'code': 0, 'message': 'Checkin! Got 2 Points', 'points': 2, 'breakdown': {'base': 2.7}},
+                True, client,
+            )
+            self.assertIn('+2 分', summary)
+            self.assertIn('分项合计 +2.7 分', summary)
+
+            # 3. Declared points mismatch actual ledger entry
+            summary = checkin.summarize_current_run_gain(
+                {'code': 0, 'message': 'Checkin! Got 7 Points', 'points': 7}, True, client,
+            )
+            self.assertIn('⚠️ +2 分', summary)
+            self.assertIn('接口返回 +7 分', summary)
+            self.assertIn('与积分流水实际入账不一致', summary)
+
+            # 4. Repeat check-in after manual browser check-in earlier today
+            client.req.return_value = {
+                'points': '155',
+                'history': [{'change': '12', 'time': TODAY_MS}],
+                'plans': {},
+            }
+            client.get_points()
+            summary = checkin.summarize_current_run_gain(
+                {'code': 1, 'message': "Today's observation logged. Return tomorrow for more points."},
+                True, client,
+            )
+            self.assertEqual(summary, '0 分（本次为重复请求；今日流水此前已入账 +12 分）')
+
+    def test_pre_exchange_checkin_gain_is_preserved_after_auto_exchange_deduction(self):
+        client = checkin.GLaDOS(COOKIE)
+        client.checkin = mock.Mock(return_value={'code': 0, 'message': 'Checkin! Got 11 Points'})
+        client.get_status = mock.Mock(return_value=True)
+        client.exchange = mock.Mock(return_value={'code': 0, 'message': 'ok'})
+        client.req = mock.Mock(side_effect=[
+            {'points': '501', 'history': [{'change': '11', 'time': TODAY_MS}], 'plans': {}},
+            {'points': '1', 'history': [
+                {'change': '-500', 'time': TODAY_MS + 1000, 'business': 'exchange'},
+                {'change': '11', 'time': TODAY_MS, 'business': 'checkin'},
+            ], 'plans': {}},
+        ])
+        with mock.patch('checkin.beijing_now', return_value=FIXED_NOW), \
+                mock.patch.dict(os.environ, {
+                    'GLADOS_COOKIE': COOKIE,
+                    'EXCHANGE_PLAN': 'plan500',
+                    'CHECKIN_MAX_ATTEMPTS': '1',
+                    'PUSHPLUS_TOKEN': 'fake-token',
+                    'PUSH_LEVEL': 'fail_only',
+                }, clear=True), \
+                mock.patch('checkin.GLaDOS', return_value=client), \
+                mock.patch('checkin.pushplus') as push, \
+                mock.patch('checkin.log'):
+            self.assertEqual(checkin.main(), 0)
+
+        content = push.call_args.args[2]
+        self.assertIn('+11 分（已与今日积分流水核对一致）', content)
+        self.assertIn('兑换成功 +100天 (消耗500分)', content)
+        self.assertIn('-500（', content)
+
