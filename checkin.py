@@ -368,6 +368,7 @@ class GLaDOS:
         self.left_days = "?"
         self.points = "?"
         self.points_change = "?"
+        self.points_change_time = "未知"
         self.exchange_info = ""
         self.exchange_result = ""
         self.plan = "?"
@@ -449,7 +450,9 @@ class GLaDOS:
             # 当前积分
             self.points = str(res.get('points', '0')).split('.')[0]
             
-            # 最近一次积分变化
+            # This is the latest ledger entry, not a change caused by this run.
+            self.points_change = '?'
+            self.points_change_time = '未知'
             history = res.get('history', [])
             if history:
                 last = history[0]
@@ -457,6 +460,14 @@ class GLaDOS:
                 if not change.startswith('-'):
                     change = '+' + change
                 self.points_change = change
+                timestamp = last.get('time')
+                if type(timestamp) in (int, float) and math.isfinite(timestamp):
+                    try:
+                        self.points_change_time = datetime.fromtimestamp(
+                            timestamp / 1000, timezone(timedelta(hours=8))
+                        ).strftime('%Y-%m-%d %H:%M:%S 北京时间')
+                    except (ValueError, OverflowError, OSError):
+                        pass
             
             # 兑换计划
             plans = res.get('plans', {})
@@ -746,7 +757,10 @@ def main():
         # 4. Result Formatting
         account_label = str(g.email) if g.email != '?' else f'账号 {i}'
         points_label = str(g.points) if g.points != '?' else '未获取'
-        change_label = f'({g.points_change})' if g.points_change != '?' else ''
+        history_label = (
+            f'{g.points_change}（{g.points_change_time}；历史记录，不代表本次新增）'
+            if g.points_change != '?' else '未获取'
+        )
         days_label = f'{g.left_days} 天' if g.left_days != '?' else '未获取'
         exchange_line = ""
         if exchange_plan:
@@ -755,7 +769,8 @@ def main():
         results.append(f"""
 <div style="border:2px solid #333; padding:15px; margin-bottom:15px; border-radius:10px; background:#fff;">
     <h3 style="margin:0 0 15px 0; color:#333; border-bottom:2px solid #333; padding-bottom:8px;">👤 {html.escape(account_label)}</h3>
-    <p style="margin:8px 0; color:#000; font-size:16px;"><b>当前积分:</b> <span style="color:#e74c3c; font-size:22px; font-weight:bold;">{html.escape(points_label)}</span> <span style="color:#27ae60; font-weight:bold;">{html.escape(change_label)}</span></p>
+    <p style="margin:8px 0; color:#000; font-size:16px;"><b>当前积分:</b> <span style="color:#e74c3c; font-size:22px; font-weight:bold;">{html.escape(points_label)}</span></p>
+    <p style="margin:8px 0; color:#666; font-size:14px;"><b>最近一笔积分变动:</b> {html.escape(history_label)}</p>
     <p style="margin:8px 0; color:#000; font-size:16px;"><b>剩余天数:</b> <span style="font-weight:bold;">{html.escape(days_label)}</span></p>
     <p style="margin:8px 0; color:#000; font-size:16px;"><b>签到结果:</b> {html.escape(str(msg))}</p>{exchange_line}
     <div style="margin-top:15px; padding:12px; background:#f0f0f0; border-radius:8px; border:1px solid #ccc;">
