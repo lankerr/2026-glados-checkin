@@ -145,12 +145,13 @@ class UserAgentFlowTests(unittest.TestCase):
         sleep.assert_not_called()
 
     def test_normal_and_diagnostic_main_fail_before_client_or_notifications(self):
-        for mode in ('false', 'true'):
+        for diag_mode, notify_mode in (('false', 'false'), ('true', 'false'), ('false', 'true')):
             for raw in (USER_AGENT + '\nBroken', '"' + USER_AGENT, 'User-Agent:'):
-                with self.subTest(mode=mode, raw=raw), mock.patch.dict(os.environ, {
+                with self.subTest(diag=diag_mode, notify=notify_mode, raw=raw), mock.patch.dict(os.environ, {
                     'GLADOS_COOKIE': COOKIE,
                     'GLADOS_USER_AGENT': raw,
-                    'CHECKIN_DIAGNOSTIC_ONLY': mode,
+                    'CHECKIN_DIAGNOSTIC_ONLY': diag_mode,
+                    'CHECKIN_NOTIFY_STATUS_ONLY': notify_mode,
                     'SERVERCHAN_SENDKEY': 'SCTsynthetic-private-key',
                     'PUSHPLUS_TOKEN': 'synthetic-private-token',
                     'TELEGRAM_BOT_TOKEN': 'synthetic-private-token',

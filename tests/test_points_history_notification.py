@@ -186,3 +186,61 @@ class PointsHistoryTests(unittest.TestCase):
         self.assertIn('兑换成功 +100天 (消耗500分)', content)
         self.assertIn('-500（', content)
 
+    def test_notify_status_only_pushes_readonly_card_without_checkin_or_exchange(self):
+        client = checkin.GLaDOS(COOKIE)
+        client.checkin = mock.Mock(side_effect=AssertionError('checkin must not be called in notify_status_only'))
+        client.exchange = mock.Mock(side_effect=AssertionError('exchange must not be called in notify_status_only'))
+        client.req = mock.Mock(side_effect=[
+            {'code': 0, 'data': {'email': 'readonly@example.test', 'leftDays': '688.0'}},
+            {
+                'points': '15',
+                'history': [{'change': '14.0', 'time': 1794499249195}],
+                'plans': {'plan100': {'points': 100, 'days': 10}},
+            },
+        ])
+        with mock.patch('checkin.beijing_now', return_value=FIXED_NOW), \
+                mock.patch.dict(os.environ, {
+                    'GLADOS_COOKIE': COOKIE,
+                    'CHECKIN_NOTIFY_STATUS_ONLY': 'true',
+                    'EXCHANGE_PLAN': 'plan500',
+                    'PUSH_LEVEL': 'fail_only',
+                    'PUSHPLUS_TOKEN': 'fake-token',
+                }, clear=True), \
+                mock.patch('checkin.GLaDOS', return_value=client), \
+                mock.patch('checkin.pushplus', return_value=True) as push, \
+                mock.patch('checkin.log') as log_mock, \
+                mock.patch('requests.sessions.Session.request', side_effect=AssertionError('No network')):
+            self.assertEqual(checkin.main(), 0)
+
+        client.checkin.assert_not_called()
+        client.exchange.assert_not_called()
+        self.assertEqual(client.req.call_count, 2)
+        push.assert_called_once()
+        title = push.call_args.args[1]
+        content = push.call_args.args[2]
+        self.assertIn('GLaDOS状态核对: 只读核对完成 1/1', title)
+        self.assertIn('readonly@example.test', content)
+        self.assertIn('15', content)
+        self.assertNotIn('(+14)', content)
+        self.assertIn('本次为只读核对（未发起签到请求）', content)
+        self.assertIn('历史记录，不代表本次新增', content)
+        self.assertIn('只读核对模式，本次跳过自动兑换', content)
+        self.assertNotIn('readonly@example.test', str(log_mock.call_args_list))
+
+    def test_notify_status_only_returns_nonzero_when_no_push_channel_configured(self):
+        client = checkin.GLaDOS(COOKIE)
+        client.checkin = mock.Mock(side_effect=AssertionError('checkin must not be called'))
+        client.req = mock.Mock(side_effect=[
+            {'code': 0, 'data': {'email': 'readonly@example.test', 'leftDays': '688.0'}},
+            {'points': '15', 'history': [], 'plans': {}},
+        ])
+        with mock.patch('checkin.beijing_now', return_value=FIXED_NOW), \
+                mock.patch.dict(os.environ, {
+                    'GLADOS_COOKIE': COOKIE,
+                    'CHECKIN_NOTIFY_STATUS_ONLY': 'true',
+                }, clear=True), \
+                mock.patch('checkin.GLaDOS', return_value=client), \
+                mock.patch('checkin.log'):
+            self.assertEqual(checkin.main(), 1)
+
+

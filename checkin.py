@@ -824,6 +824,127 @@ def telegram_push(token, chat_id, title, content):
         log(f"❌ Telegram 推送失败: {e}")
         return False
 
+def summarize_readonly_ledger(client, status_ok, points_ok):
+    """Describe ledger observations in read-only mode without sending a check-in."""
+    if not status_ok:
+        return '未获取（登录状态读取未成功，本次未发起签到请求）'
+    if not points_ok:
+        return '未获取（积分流水读取未成功，本次未发起签到请求）'
+    today_gain = getattr(client, 'today_positive_change', None)
+    if isinstance(today_gain, str):
+        return (
+            f'本次为只读核对（未发起签到请求）；今日已读取流水中一笔正变动 {today_gain} 分'
+            '（非今日合计，可能来自网页手动签到或其他变动）'
+        )
+    return '本次为只读核对（未发起签到请求）；已读取流水中未识别到今日正变动（不等于没有入账，今日可能尚未签到或记录延迟）'
+
+
+def render_account_card(
+    index,
+    client,
+    gain_summary,
+    status_message,
+    exchange_line="",
+    gain_heading="签到响应与流水观察",
+    result_heading="签到结果",
+):
+    """Render per-account HTML card for PushPlus/ServerChan/Telegram notifications."""
+    account_label = str(client.email) if client.email != '?' else f'账号 {index}'
+    points_label = str(client.points) if client.points != '?' else '未获取'
+    change_time = (
+        client.points_change_time
+        if isinstance(getattr(client, 'points_change_time', None), str) else '未知'
+    )
+    history_label = (
+        f'{client.points_change}（{change_time}；历史记录，不代表本次新增）'
+        if client.points_change != '?' else '未获取'
+    )
+    days_label = f'{client.left_days} 天' if client.left_days != '?' else '未获取'
+    return f"""
+<div style="border:2px solid #333; padding:15px; margin-bottom:15px; border-radius:10px; background:#fff;">
+    <h3 style="margin:0 0 15px 0; color:#333; border-bottom:2px solid #333; padding-bottom:8px;">👤 {html.escape(account_label)}</h3>
+    <p style="margin:8px 0; color:#000; font-size:16px;"><b>当前积分:</b> <span style="color:#e74c3c; font-size:22px; font-weight:bold;">{html.escape(points_label)}</span></p>
+    <p style="margin:8px 0; color:#000; font-size:15px;"><b>{html.escape(gain_heading)}:</b> {html.escape(gain_summary)}</p>
+    <p style="margin:8px 0; color:#666; font-size:14px;"><b>最近一笔积分变动:</b> {html.escape(history_label)}</p>
+    <p style="margin:8px 0; color:#000; font-size:16px;"><b>剩余天数:</b> <span style="font-weight:bold;">{html.escape(days_label)}</span></p>
+    <p style="margin:8px 0; color:#000; font-size:16px;"><b>{html.escape(result_heading)}:</b> {html.escape(str(status_message))}</p>{exchange_line}
+    <div style="margin-top:15px; padding:12px; background:#f0f0f0; border-radius:8px; border:1px solid #ccc;">
+        <p style="margin:0 0 8px 0; color:#333; font-weight:bold; font-size:15px;">🎁 兑换选项:</p>
+        <p style="margin:0; color:#000; font-size:14px; line-height:1.8;">
+{client.exchange_info}</p>
+    </div>
+</div>
+"""
+
+
+def notify_status_accounts(cookies):
+    """Read account status and points ledger, then push a read-only summary card."""
+    log('📬 只读状态与积分核对推送：仅读取登录状态与积分流水并发送通知，不发起签到请求、不自动兑换')
+    if not log_user_agent_configuration():
+        return 1
+    exchange_plan = get_exchange_plan()
+    results = []
+    success_cnt = 0
+
+    for i, cookie in enumerate(cookies, 1):
+        g = GLaDOS(cookie)
+        status_ok = g.get_status()
+        points_ok = g.get_points() if status_ok else False
+        query_ok = bool(status_ok and points_ok)
+        if query_ok:
+            success_cnt += 1
+            msg = '只读状态与积分核对（未发起签到请求，不触发人机验证）'
+        elif status_ok:
+            msg = '登录状态正常，但积分流水读取未成功（未发起签到请求）'
+        else:
+            msg = '登录状态读取未成功，请检查会话配置或网络（未发起签到请求）'
+
+        gain_summary = summarize_readonly_ledger(g, status_ok, points_ok)
+        log(
+            f"{'✅' if query_ok else '❌'} 账号 {i} | 积分: {g.points} | 流水观察: {gain_summary} | "
+            f"天数: {g.left_days} | 模式: {msg}"
+        )
+        exchange_line = ""
+        if exchange_plan:
+            g.exchange_result = '⏭️ 只读核对模式，本次跳过自动兑换'
+            exchange_line = f"""
+    <p style="margin:8px 0; color:#000; font-size:16px;"><b>自动兑换:</b> {html.escape(g.exchange_result)}</p>"""
+        results.append(render_account_card(
+            i,
+            g,
+            gain_summary,
+            msg,
+            exchange_line=exchange_line,
+            gain_heading="流水观察",
+            result_heading="运行模式",
+        ))
+
+    ptoken = os.environ.get("PUSHPLUS_TOKEN")
+    serverchan_sendkey = os.environ.get("SERVERCHAN_SENDKEY", "").strip()
+    tg_token = os.environ.get("TELEGRAM_BOT_TOKEN")
+    tg_chat_id = os.environ.get("TELEGRAM_CHAT_ID")
+
+    if not (ptoken or serverchan_sendkey or (tg_token and tg_chat_id)):
+        log("⚠️ 未配置任何通知渠道（PUSHPLUS_TOKEN / SERVERCHAN_SENDKEY / TELEGRAM），无法发送状态推送")
+        return 1
+
+    outcome = '只读核对完成' if success_cnt == len(cookies) else '只读核对异常'
+    title = f"GLaDOS状态核对: {outcome} {success_cnt}/{len(cookies)}"
+    content = "".join(results)
+    content += '<p>说明：本次为只读状态与积分流水核对推送，未调用签到或兑换接口，不会触发 Turnstile 验证。</p>'
+    content += f"<br><small>时间（北京时间 UTC+8）: {beijing_time()}</small>"
+
+    push_ok = True
+    if ptoken:
+        push_ok = pushplus(ptoken, title, content) and push_ok
+    if serverchan_sendkey:
+        push_ok = serverchan_push(serverchan_sendkey, title, content) and push_ok
+    if tg_token and tg_chat_id:
+        push_ok = bool(telegram_push(tg_token, tg_chat_id, title, content)) and push_ok
+
+    return 0 if (success_cnt == len(cookies) and push_ok) else 1
+
+
 def diagnose_accounts(cookies):
     """Read authentication status without check-in, redemption or notifications."""
     success_cnt = 0
@@ -861,6 +982,9 @@ def main():
 
     if os.environ.get('CHECKIN_DIAGNOSTIC_ONLY', '').strip().lower() in ('1', 'true', 'yes'):
         return diagnose_accounts(cookies)
+
+    if os.environ.get('CHECKIN_NOTIFY_STATUS_ONLY', '').strip().lower() in ('1', 'true', 'yes'):
+        return notify_status_accounts(cookies)
 
     if not log_user_agent_configuration():
         return 1
@@ -921,36 +1045,11 @@ def main():
             success_cnt += 1
 
         # 4. Result Formatting
-        account_label = str(g.email) if g.email != '?' else f'账号 {i}'
-        points_label = str(g.points) if g.points != '?' else '未获取'
-        change_time = (
-            g.points_change_time
-            if isinstance(getattr(g, 'points_change_time', None), str) else '未知'
-        )
-        history_label = (
-            f'{g.points_change}（{change_time}；历史记录，不代表本次新增）'
-            if g.points_change != '?' else '未获取'
-        )
-        days_label = f'{g.left_days} 天' if g.left_days != '?' else '未获取'
         exchange_line = ""
         if exchange_plan:
             exchange_line = f"""
     <p style="margin:8px 0; color:#000; font-size:16px;"><b>自动兑换:</b> {html.escape(g.exchange_result)}</p>"""
-        results.append(f"""
-<div style="border:2px solid #333; padding:15px; margin-bottom:15px; border-radius:10px; background:#fff;">
-    <h3 style="margin:0 0 15px 0; color:#333; border-bottom:2px solid #333; padding-bottom:8px;">👤 {html.escape(account_label)}</h3>
-    <p style="margin:8px 0; color:#000; font-size:16px;"><b>当前积分:</b> <span style="color:#e74c3c; font-size:22px; font-weight:bold;">{html.escape(points_label)}</span></p>
-    <p style="margin:8px 0; color:#000; font-size:15px;"><b>签到响应与流水观察:</b> {html.escape(gain_summary)}</p>
-    <p style="margin:8px 0; color:#666; font-size:14px;"><b>最近一笔积分变动:</b> {html.escape(history_label)}</p>
-    <p style="margin:8px 0; color:#000; font-size:16px;"><b>剩余天数:</b> <span style="font-weight:bold;">{html.escape(days_label)}</span></p>
-    <p style="margin:8px 0; color:#000; font-size:16px;"><b>签到结果:</b> {html.escape(str(msg))}</p>{exchange_line}
-    <div style="margin-top:15px; padding:12px; background:#f0f0f0; border-radius:8px; border:1px solid #ccc;">
-        <p style="margin:0 0 8px 0; color:#333; font-weight:bold; font-size:15px;">🎁 兑换选项:</p>
-        <p style="margin:0; color:#000; font-size:14px; line-height:1.8;">
-{g.exchange_info}</p>
-    </div>
-</div>
-""")
+        results.append(render_account_card(i, g, gain_summary, msg, exchange_line=exchange_line))
 
     # Push
     push_level = os.environ.get("PUSH_LEVEL", "fail_only").lower()

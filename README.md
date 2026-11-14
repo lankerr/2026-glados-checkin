@@ -42,13 +42,14 @@
 | 自述实际 12 分、前一日有购买记录；明确先手动签到，再运行脚本 | [Issue #28：补充说明](https://github.com/lankerr/2026-glados-checkin/issues/28#issuecomment-6874124849) | 后续脚本返回 `Today's observation logged`，不能证明脚本完成当日首次签到或自动获得 12 分。 |
 | 自述提交官方 ticket 后问题修复并获 20 分，当时准备次日观察自动签到 | [Issue #37：工单反馈](https://github.com/lankerr/2026-glados-checkin/issues/37#issuecomment-6850764702) | 截至本公告核对时未看到该用户确认次日自动恢复；不知道客服具体操作，不能保证补分或恢复。 |
 | 手动签到页面显示 `Free cap max 2` | [Issue #28：截图反馈](https://github.com/lankerr/2026-glados-checkin/issues/28#issuecomment-6842245219) | 支持存在此账号页面提示，不代表所有账户完整奖励规则；购买历史与套餐标签不能等同。 |
-| 其他项目也报告 Cloudflare 拒绝，其中有 `code=5, reason=turnstile` | [checkin #75](https://github.com/integration-intelligent/checkin/issues/75)、[Glados-Railgun #60](https://github.com/Devilstore/Glados-Railgun-checkin/issues/60)、[MoviePilot #82](https://github.com/madrays/MoviePilot-Plugins/issues/82) | 是跨项目公开反馈，不代表所有账号受影响，也不是已验证的通用修复。 |
+| 其他项目也报告 Cloudflare 拒绝，其中有 `code=5, reason=turnstile`，且 GitHub Actions 机房环境的无头浏览器尝试在同日公开运行中同样未通过 | [checkin #75](https://github.com/integration-intelligent/checkin/issues/75)、[Glados-Railgun #60](https://github.com/Devilstore/Glados-Railgun-checkin/issues/60)、[MoviePilot #82](https://github.com/madrays/MoviePilot-Plugins/issues/82) | 是跨项目公开反馈与公开运行记录；说明 challenge 已关联 Turnstile 校验，公共机房环境自动过验尚无已验证的通用方案。 |
 
 **关于购买：**已有自称付费账号仍低分或遇到验证的[反馈](https://github.com/lankerr/2026-glados-checkin/issues/37#issuecomment-6847563354)。即使付款解除某项积分上限，也不等于保证固定积分或解决 Turnstile。不要仅为排查而购买，也不要把“手动成功后脚本显示已签到”当作自动恢复证据。
 
 ### 目前如何核对与反馈
 
 - 以官网签到记录和积分流水核对实际入账，不只看 Actions 绿灯、HTTP 200 或状态查询成功。
+- 如需在不触发 Turnstile 的前提下验证配置或通知：可在 GitHub Actions **Run workflow** 中勾选 `diagnose_only`（只读验证会话，不推送）或 `notify_status_only`（只读读取状态与积分流水并发送 PushPlus/Server酱/Telegram 核对卡片，不发起签到请求、不自动兑换）。
 - 遇到验证拒绝时，可按官网正常人工流程处理或联系官方支持；不要为了收集数据重复签到、购买套餐或频繁切换网络。
 - 欢迎在 [Issue #37 的脱敏数据征集](https://github.com/lankerr/2026-glados-checkin/issues/37#issuecomment-6872387904)自愿补充已有的时间/时区、脚本版本、手动或自动、脱敏错误及积分变化。购买状态、工单结果可以不填。
 - **不要公开 Cookie、Token、密码、验证码、nonce/proof、完整请求头、HAR 或含邮箱/账号/订单信息的截图。**
