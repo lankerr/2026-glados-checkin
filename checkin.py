@@ -489,19 +489,19 @@ def attempt_browser_checkin(client, max_attempts=2):
     if not ua:
         log("⚠️ 缺少浏览器 User-Agent，跳过浏览器兜底")
         return None
-    result = None
-    for i in range(1, max(1, max_attempts) + 1):
-        log(f"🔄 浏览器签到兜底第 {i}/{max_attempts} 次（真页面自行完成 Turnstile）…")
-        try:
-            result = browser_checkin(client.cookie, ua)
-        except Exception as e:  # noqa: BLE001 - 兜底通道绝不冒泡异常
-            result = {'request_failed': True, 'reason': 'browser-checkin-error',
-                      'detail': type(e).__name__}
-        if is_normal_checkin_result(result) or is_non_retryable_checkin_result(result):
-            return result
-        if i < max_attempts:
-            time.sleep(8)
-    return result
+    # Verify expected identity via the configured credential, never an old browser profile.
+    try:
+        status = client.req('GET', '/api/user/status')
+        data = status.get('data') if isinstance(status, dict) else None
+        email = data.get('email') if isinstance(data, dict) else None
+        if not isinstance(email, str) or not email.strip() or email in ('?', 'Unknown'):
+            return {'request_failed': True, 'reason': 'browser-identity-unverified'}
+        # A browser click can have succeeded even when its response is lost.
+        # max_attempts is retained for caller compatibility, deliberately ignored.
+        return browser_checkin(client.cookie, ua, expected_email=email)
+    except Exception as e:  # noqa: BLE001
+        return {'request_failed': True, 'reason': 'browser-checkin-error',
+                'detail': type(e).__name__}
 
 
 def checkin_with_retry(client, attempts=3, delay_seconds=60):
