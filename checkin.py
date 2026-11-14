@@ -435,43 +435,32 @@ def extract_declared_checkin_points(result):
 
 
 def summarize_current_run_gain(result, is_success, client):
-    """Cross-check /api/user/checkin response against /api/user/points today's ledger."""
-    if not is_success:
-        return '0 分（本次未签到成功，无新增入账）'
+    """Keep API claims and ledger observations separate: no transaction linkage exists.
 
-    today_gain = getattr(client, 'today_positive_change', None)
-    if not isinstance(today_gain, str):
-        today_gain = None
-    has_dated = getattr(client, 'has_dated_history', False) is True
+    A same-day credit, even for the same amount, can be an earlier/manual or
+    unrelated credit. A final refusal/repeat response cannot exclude a credit
+    from an earlier request whose response was lost during this run.
+    """
+    if not is_success:
+        return '未确认（最终请求未成功；本轮是否入账未知，请核对完整流水）'
 
     if is_repeat_checkin_result(result):
-        if today_gain:
-            return f'0 分（本次为重复请求；今日流水此前已入账 {today_gain} 分）'
-        if has_dated:
-            return '0 分（接口返回今日已签到，但流水中未见今日加分记录，请核对官网流水）'
-        return '0 分（重复签到，本次无新增入账）'
+        claim = '接口返回今日已签到（不能据此确定本轮新增积分）'
+    else:
+        declared_num, breakdown_sum = extract_declared_checkin_points(result)
+        if declared_num is None:
+            claim = '接口返回成功（本次入账归属未确认）'
+        else:
+            amount = format_points_number(declared_num, signed=True)
+            claim = f'接口声称 {amount} 分（本次入账归属未确认）'
+        if breakdown_sum is not None:
+            parts = format_points_number(breakdown_sum, signed=True)
+            claim += f'；接口分项合计 {parts} 分（不据此推断封顶规则）'
 
-    declared_num, breakdown_sum = extract_declared_checkin_points(result)
-    if today_gain:
-        actual_num = parse_finite_number(today_gain)
-        if declared_num is not None and actual_num is not None and abs(declared_num - actual_num) > 1e-6:
-            declared_str = format_points_number(declared_num, signed=True)
-            return f'⚠️ {today_gain} 分（签到接口返回 {declared_str} 分，与积分流水实际入账不一致，以流水为准）'
-        if breakdown_sum is not None and actual_num is not None and abs(breakdown_sum - actual_num) > 1e-6:
-            bd_str = format_points_number(breakdown_sum, signed=True)
-            return f'{today_gain} 分（已与今日流水核对一致；分项合计 {bd_str} 分，受上限或结算规则影响实得 {today_gain} 分）'
-        return f'{today_gain} 分（已与今日积分流水核对一致）'
-
-    if has_dated:
-        if declared_num is not None:
-            declared_str = format_points_number(declared_num, signed=True)
-            return f'⚠️ 待核实（签到接口返回 {declared_str} 分，但流水中未见今日入账记录，请核对官网流水）'
-        return '⚠️ 待核实（签到接口返回成功，但流水中未见今日入账记录，请核对官网流水）'
-
-    if declared_num is not None:
-        declared_str = format_points_number(declared_num, signed=True)
-        return f'接口返回 {declared_str} 分（未获取今日流水明细，请以总积分与官网流水为准）'
-    return '未获取今日流水明细，请以总积分与官网流水为准'
+    today_gain = getattr(client, 'today_positive_change', None)
+    if isinstance(today_gain, str):
+        return claim + f'；今日已读取流水中一笔正变动 {today_gain} 分（未关联本次请求，非今日合计）'
+    return claim + '；已读取流水中未识别到今日正变动（不等于没有入账，记录可能缺失或延迟）'
 
 
 def checkin_with_retry(client, attempts=3, delay_seconds=60):
@@ -612,6 +601,7 @@ class GLaDOS:
                 if formatted_dt:
                     self.points_change_time = formatted_dt
 
+                # Observation only: date/amount/business do not link a credit to this run.
                 for item in history[:10]:
                     if not isinstance(item, dict):
                         continue
@@ -894,7 +884,7 @@ def main():
         res, is_success = checkin_with_retry(g, attempts, delay_seconds)
         msg = res.get('message', 'Success') if is_success else summarize_checkin_failure(res)
 
-        gain_summary = '0 分（本次未签到成功，无新增入账）'
+        gain_summary = '未确认（最终请求未成功；本轮是否入账未知，请核对完整流水）'
         if is_non_retryable_checkin_result(res):
             # Stop all follow-up requests for this account after an explicit denial.
             g.exchange_result = '⏭️ 认证被拒绝，跳过兑换'
@@ -923,7 +913,7 @@ def main():
         # Actions logs are public in a public repository. Keep account details
         # inside the private notification instead of exposing the email here.
         log(
-            f"{status_icon} 账号 {i} | 积分: {g.points} | 本次入账: {gain_summary} | "
+            f"{status_icon} 账号 {i} | 积分: {g.points} | 入账核验: {gain_summary} | "
             f"天数: {g.left_days} | 结果: {msg}"
         )
 
@@ -950,7 +940,7 @@ def main():
 <div style="border:2px solid #333; padding:15px; margin-bottom:15px; border-radius:10px; background:#fff;">
     <h3 style="margin:0 0 15px 0; color:#333; border-bottom:2px solid #333; padding-bottom:8px;">👤 {html.escape(account_label)}</h3>
     <p style="margin:8px 0; color:#000; font-size:16px;"><b>当前积分:</b> <span style="color:#e74c3c; font-size:22px; font-weight:bold;">{html.escape(points_label)}</span></p>
-    <p style="margin:8px 0; color:#000; font-size:15px;"><b>本次签到入账:</b> {html.escape(gain_summary)}</p>
+    <p style="margin:8px 0; color:#000; font-size:15px;"><b>签到响应与流水观察:</b> {html.escape(gain_summary)}</p>
     <p style="margin:8px 0; color:#666; font-size:14px;"><b>最近一笔积分变动:</b> {html.escape(history_label)}</p>
     <p style="margin:8px 0; color:#000; font-size:16px;"><b>剩余天数:</b> <span style="font-weight:bold;">{html.escape(days_label)}</span></p>
     <p style="margin:8px 0; color:#000; font-size:16px;"><b>签到结果:</b> {html.escape(str(msg))}</p>{exchange_line}

@@ -101,7 +101,7 @@ class PointsHistoryTests(unittest.TestCase):
         client.exchange.assert_not_called()
         content = push.call_args.args[2]
         self.assertIn('reason=turnstile', content)
-        self.assertIn('0 分（本次未签到成功，无新增入账）', content)
+        self.assertIn('未确认（最终请求未成功；本轮是否入账未知，请核对完整流水）', content)
         self.assertIn('本次签到未成功，跳过兑换', content)
 
     def test_cross_check_distinguishes_matched_capped_mismatched_and_repeat_gains(self):
@@ -117,7 +117,8 @@ class PointsHistoryTests(unittest.TestCase):
             summary = checkin.summarize_current_run_gain(
                 {'code': 0, 'message': 'Checkin! Got 14 Points', 'points': 14}, True, client,
             )
-            self.assertEqual(summary, '+14 分（已与今日积分流水核对一致）')
+            self.assertIn('接口声称 +14 分（本次入账归属未确认）', summary)
+            self.assertIn('未关联本次请求', summary)
 
             # 2. Breakdown sum (+2.7) capped at +2 (Free cap max 2)
             client.req.return_value = {
@@ -137,9 +138,9 @@ class PointsHistoryTests(unittest.TestCase):
             summary = checkin.summarize_current_run_gain(
                 {'code': 0, 'message': 'Checkin! Got 7 Points', 'points': 7}, True, client,
             )
-            self.assertIn('⚠️ +2 分', summary)
-            self.assertIn('接口返回 +7 分', summary)
-            self.assertIn('与积分流水实际入账不一致', summary)
+            self.assertIn('一笔正变动 +2 分', summary)
+            self.assertIn('接口声称 +7 分', summary)
+            self.assertIn('本次入账归属未确认', summary)
 
             # 4. Repeat check-in after manual browser check-in earlier today
             client.req.return_value = {
@@ -152,7 +153,8 @@ class PointsHistoryTests(unittest.TestCase):
                 {'code': 1, 'message': "Today's observation logged. Return tomorrow for more points."},
                 True, client,
             )
-            self.assertEqual(summary, '0 分（本次为重复请求；今日流水此前已入账 +12 分）')
+            self.assertIn('不能据此确定本轮新增积分', summary)
+            self.assertIn('一笔正变动 +12 分', summary)
 
     def test_pre_exchange_checkin_gain_is_preserved_after_auto_exchange_deduction(self):
         client = checkin.GLaDOS(COOKIE)
@@ -180,7 +182,7 @@ class PointsHistoryTests(unittest.TestCase):
             self.assertEqual(checkin.main(), 0)
 
         content = push.call_args.args[2]
-        self.assertIn('+11 分（已与今日积分流水核对一致）', content)
+        self.assertIn('接口声称 +11 分（本次入账归属未确认）', content)
         self.assertIn('兑换成功 +100天 (消耗500分)', content)
         self.assertIn('-500（', content)
 
