@@ -480,7 +480,7 @@ def attempt_browser_checkin(client, max_attempts=2):
     try:
         from browser_checkin import browser_checkin
     except ImportError:
-        log("⚠️ playwright 未安装（pip install playwright && playwright install chromium），无法使用浏览器兜底")
+        log("⚠️ 未找到 browser_checkin 模块，无法使用浏览器兜底")
         return None
     try:
         ua = get_browser_headers().get('User-Agent')

@@ -133,5 +133,35 @@ class CookieInjectionTests(unittest.TestCase):
         self.assertNotIn('httpOnly', by_name['_ga'])
 
 
+class BrowserDetectionTests(unittest.TestCase):
+    def test_custom_and_env_path_precedence(self):
+        with mock.patch('os.path.exists', return_value=True):
+            self.assertEqual(
+                browser_checkin.find_browser_executable(custom='/custom/bin/edge'),
+                '/custom/bin/edge',
+            )
+            with mock.patch.dict(os.environ, {'GLADOS_BROWSER_PATH': '/env/bin/chrome'}):
+                self.assertEqual(
+                    browser_checkin.find_browser_executable(),
+                    '/env/bin/chrome',
+                )
+
+    def test_which_detection(self):
+        with mock.patch('os.path.exists', return_value=False), \
+                mock.patch.dict(os.environ, {'GLADOS_BROWSER_PATH': ''}), \
+                mock.patch('shutil.which', side_effect=lambda name: '/bin/microsoft-edge' if name == 'microsoft-edge' else None):
+            self.assertEqual(
+                browser_checkin.find_browser_executable(),
+                '/bin/microsoft-edge',
+            )
+
+    def test_profile_dir_respects_state_directory(self):
+        with mock.patch.dict(os.environ, {'STATE_DIRECTORY': '/var/lib/glados'}):
+            self.assertEqual(
+                browser_checkin.profile_dir(),
+                '/var/lib/glados/glados-checkin-browser',
+            )
+
+
 if __name__ == '__main__':
     unittest.main()

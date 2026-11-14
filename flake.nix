@@ -33,6 +33,7 @@
             installPhase = ''
               mkdir -p $out/bin
               cp checkin.py $out/bin/glados-checkin
+              cp browser_checkin.py $out/bin/browser_checkin.py
               chmod +x $out/bin/glados-checkin
               sed -i "1s|.*|#!${pythonEnv}/bin/python3|" $out/bin/glados-checkin
             '';

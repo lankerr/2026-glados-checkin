@@ -52,6 +52,12 @@ in
       default = null;
       description = "ServerChan SendKey for notifications (Turbo or ServerChan 3).";
     };
+
+    browserPackage = mkOption {
+      type = types.nullOr types.package;
+      default = null;
+      description = "Optional browser package (e.g. pkgs.microsoft-edge) to provide in PATH for Turnstile verification fallback.";
+    };
   };
 
   config = mkIf cfg.enable {
@@ -59,6 +65,7 @@ in
       description = "GLaDOS Automatic Check-in";
       wants = [ "network-online.target" ];
       after = [ "network-online.target" ];
+      path = optional (cfg.browserPackage != null) cfg.browserPackage;
 
       environment = {
         GLADOS_COOKIE = cfg.cookie;
@@ -82,6 +89,7 @@ in
         ExecStart = "${self.packages.${pkgs.system}.default}/bin/glados-checkin";
         LoadCredential = [ ]; # Can be used for secrets later if needed
         DynamicUser = true;
+        StateDirectory = "glados-checkin";
       };
     };
 
