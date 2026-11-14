@@ -1,3 +1,7 @@
 __pycache__/
 *.py[cod]
 .pytest_cache/
+# 真浏览器兜底的本地产物：登录态与截图绝不入库
+browser_profile/
+logs/
+*.png

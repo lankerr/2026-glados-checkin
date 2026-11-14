@@ -19,6 +19,11 @@ on:
         required: false
         default: false
         type: boolean
+      notify_status_only:
+        description: 只读取账号状态与积分流水并发送通知（如 PushPlus），不发起签到请求、不自动兑换
+        required: false
+        default: false
+        type: boolean
 
 concurrency:
   group: glados-checkin
@@ -58,6 +63,7 @@ jobs:
           # Prefer the repository Variable; accept a same-named Secret for compatibility.
           GLADOS_USER_AGENT: ${{ vars.GLADOS_USER_AGENT || secrets.GLADOS_USER_AGENT }}
           CHECKIN_DIAGNOSTIC_ONLY: ${{ inputs.diagnose_only && 'true' || 'false' }}
+          CHECKIN_NOTIFY_STATUS_ONLY: ${{ inputs.notify_status_only && 'true' || 'false' }}
           PUSHPLUS_TOKEN: ${{ secrets.PUSHPLUS_TOKEN }}
           SERVERCHAN_SENDKEY: ${{ secrets.SERVERCHAN_SENDKEY }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}

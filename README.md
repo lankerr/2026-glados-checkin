@@ -1,21 +1,35 @@
 # 🎁 5 分钟配置 GLaDOS 自动签到
 
+> [!WARNING]
+> **2026-11-14：已观察到 Turnstile 验证拒绝；仅有维护者单一账号一次本地浏览器测试返回 +10 的记录，不能视为通用或长期修复。Actions 默认关闭浏览器兜底；安全收紧方案 #38 尚未合并、部署或完成真实浏览器验收。**
+
+<a id="status-2026-11-14"></a>
+## 📢 2026-11-14 公告：Turnstile 观察结果与待修复风险
+
+**已观察到的问题**：维护者运行及部分社区反馈出现 `code=5, reason=turnstile`（Cloudflare verification failed）；部分 GitHub Actions 无头浏览器尝试也未通过。这些记录不足以认定所有纯 API 请求或所有机房环境都必然失败。
+
+**本地单次测试记录**：现有 [`browser_checkin.py`](browser_checkin.py) 在接口明确返回 `reason=turnstile` 时，尝试用本机 Chrome（Edge → Chromium 回退）打开官方签到页，由页面处理验证并点击签到。北京时间 11 月 14 日 19:35，维护者单一账号返回 `Got 10`，余额从此前 15 变为 25，已读流水观察到当日 +10；没有交易标识将流水与请求严格关联。20:30 返回重复签到，不是再次增加 10 分。以上不证明其他账号、运行环境或后续日期可用。
+
+- **Actions 默认关闭**：检测到 `GITHUB_ACTIONS` 时默认不启用浏览器兜底，显式设置 `GLADOS_BROWSER_CHECKIN=1` 才会尝试。尚未验证 Actions 自动首次签到恢复；可用只读模式核对（`diagnose_only` / `notify_status_only`）。
+- **当前 main 的风险**：浏览器使用共享持久化 profile，未核验浏览器当前账号身份，存在多账号残留会话混用风险（并非已证实发生混用）；点击后丢失响应等模糊结果可能触发换域名或外层重试。未收到成功响应不等于没有提交成功，不应据此反复补签。
+- **待验收方案**：[Draft PR #38](https://github.com/lankerr/2026-glados-checkin/pull/38) 拟加入会话隔离、身份核对、模糊结果停止重试和并发防护；**尚未合并 main、未部署到现有本地调度、未完成真实浏览器/真实签到验收**。离线测试通过不代表线上已解决。
+- **本地使用边界**：不能保证“无需重新配置”；Cookie、UA、浏览器和运行环境需分别核对。验证仍由官网组件决定是否放行，不能保证成功。存在上述风险时，优先使用官网手动签到，不要为验证脚本而反复提交。
+- **付费边界**：已有自述付费账号仍遇到低分或验证失败的反馈；付款不保证固定积分或免除 Turnstile，但不能外推为所有付费账号均无效。请勿仅为排查而购买套餐（见 [#37](https://github.com/lankerr/2026-glados-checkin/issues/37)）。
+
+**积分口径**：通知将"接口声称加分"与"积分流水观察"分开显示、不强行关联归属——同日同额不能证明是本次入账，历史流水也不代表本次奖励（相关讨论见 [#28](https://github.com/lankerr/2026-glados-checkin/issues/28)、[#37](https://github.com/lankerr/2026-glados-checkin/issues/37)）。
+
+**隐私**：任何反馈都不要公开 Cookie、Token、密码、验证码、nonce/proof、完整请求头、HAR 或含邮箱/账号信息的截图。
+
+---
+
 > [!IMPORTANT]
-> **✅ GLaDOS 自动签到已恢复（2026-09-30）。** 新版认证修复已发布，维护者仓库已验证签到与 PushPlus 通知正常，[查看恢复公告和实测记录](https://github.com/lankerr/2026-glados-checkin/releases/tag/v2026.9.30)。
->
-> Fork 用户请先 **Sync fork → Update branch**。**已能正常签到的用户无需更换 Cookie。**
->
-> 同步后若仍提示“没有权限”、`device-mismatch` 或 “Automated check-in detected”，再重新登录，从成功的 `/api/user/status` 请求中复制**完整单行 Cookie**（包含 `gld:sess` 与 `gld:sess.sig`）更新 `GLADOS_COOKIE`，并将同一登录浏览器的完整 User-Agent 配置为 `GLADOS_USER_AGENT`。
->
-> **同步代码不会更新个人仓库的 Secrets 和 Variables。** 请手动运行一次验证自己的配置。
->
-> 希望收到后续修复公告，可在原仓库选择 **Watch → Custom → Releases**。Fork 本身不代表订阅更新通知。
+> **历史恢复记录（2026-09-30）**：新版认证修复见 [v2026.9.30 发布说明](https://github.com/lankerr/2026-glados-checkin/releases/tag/v2026.9.30)。Fork 用户请先 **Sync fork → Update branch**；同步代码不会更新你的 Secrets，请手动跑一次验证配置。后续公告可 **Watch → Custom → Releases** 订阅。
 
 <div align="center">
 
-**你不用写代码 · 不用买服务器 · 不用每天登录**
+**无需编写代码 · 无需自购服务器；当前验证限制见上方公告**
 
-**一次配置，每天 9:30 自动签到；失败自动重试**
+**配置后每天 9:30 自动尝试签到；不保证通过服务端验证**
 
 ---
 
@@ -23,7 +37,7 @@
 
 | 优势                  | 说明                                                |
 | --------------------- | --------------------------------------------------- |
-| ✅ **2026年验证可用** | 持续通过 Actions 日志和单元测试验证                 |
+| ⚠️ **当前状态** | 单账号单次本地测试记录；Actions 浏览器兜底默认关闭；安全收紧方案待验收 |
 | ✅ **结果可信**       | 正确区分签到完成、重复签到和真实失败                |
 | ✅ **新手友好**       | 全程图解，不会也能照着做                            |
 | ✅ **作者持续维护**   | 遇到问题提Issue，作者很乐意帮忙                     |
@@ -180,6 +194,8 @@ GLaDOS 在 2026 年初进行了 API 更新，**绝大多数旧签到脚本已失
 | `TELEGRAM_CHAT_ID`   | ❌ 否 | 接收推送的 Telegram Chat ID                                                |
 | `PUSH_LEVEL`         | ❌ 否 | 推送级别：`fail_only`（默认，仅失败推送）或 `all`（每次均推送）            |
 | `EXCHANGE_PLAN`      | ❌ 否 | 积分自动兑换计划（#11）：`plan500`（默认，500 分自动兑换 100 天）、`plan200`（200 分→30 天）、`plan100`（100 分→10 天）或 `off`（关闭）。兑换结果即使 `PUSH_LEVEL=fail_only` 也会推送。 |
+| `GLADOS_BROWSER_CHECKIN` | ❌ 否 | Turnstile 真浏览器兜底开关：默认开启；`0` 关闭。检测到 `GITHUB_ACTIONS` 时默认自动禁用，设 `1` 可显式尝试（尚未验证 Actions 首次签到恢复）。 |
+| `GLADOS_BROWSER_HEADLESS` | ❌ 否 | 浏览器兜底改无头模式：默认 `0`（有头）；未验证不同环境的成功率。 |
 
 PushPlus、Server酱和 Telegram 均为可选，可单独使用，也可同时配置；多个渠道配置后会分别发送同一份多账号汇总，并遵循同一个 `PUSH_LEVEL` 设置。只读诊断（`diagnose_only`）不发送推送。
 
@@ -731,7 +747,7 @@ GitHub 官方规则是：公开仓库连续 **60 天没有仓库活动**时，�
 <details>
 <summary><b>Q: 显示 "Checkin Repeats! Please Try Tomorrow" 是什么意思？</b></summary>
 
-这表示**今天已经成功签到过了**！这是正常的成功响应，说明签到功能正常工作。
+这表示服务端认为**今天已经签到过**。它可能出现在网页手动签到之后；不能单凭此响应证明脚本完成了当日首次签到或新增积分，请核对积分流水。
 
 </details>
 
@@ -843,6 +859,11 @@ GitHub 的 schedule 不是实时调度器：高负载时可能延迟，极端情
 
 ## 📝 更新日志
 
+### 2026-11-14：签到状态公告（文档更新）
+
+- 在 README 顶部区分 Turnstile 拒绝实测、历史成功、手动/重复签到及工单反馈。
+- 添加来源和脱敏数据征集入口；本次没有修改签到代码或发布验证修复。
+
 ### 2026-09-30：新版会话与设备校验修复
 
 - 合并 [@badpinkman 的 PR #18](https://github.com/lankerr/2026-glados-checkin/pull/18)，适配 `gld:sess` / `gld:sess.sig` 和 `GLADOS_USER_AGENT`。
@@ -893,7 +914,7 @@ MIT
 
 **Made with ❤️ for GLaDOS users in 2026**
 
-**🔧 本项目最近一次维护验证：2026-11-06**
+**🔧 文档状态更新：2026-11-14；签到可用性见顶部公告**
 
 **⭐ Star 一下，支持作者持续更新！⭐**
 
