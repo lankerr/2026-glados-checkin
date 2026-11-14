@@ -356,6 +356,8 @@ def _try_domains_cdp(browser_path, cookie_header, headless, user_agent=None):
         '--lang=zh-CN',
         'about:blank',
     ]
+    if hasattr(os, 'geteuid') and os.geteuid() == 0:
+        args.append('--no-sandbox')
     if headless:
         args.append('--headless=new')
     if user_agent:
