@@ -35,6 +35,7 @@ class BrowserFallbackTests(OfflineTestCase):
     def make_client(self, api_result):
         client = checkin.GLaDOS(COOKIE)
         client.checkin = mock.Mock(return_value=api_result)
+        client.req = mock.Mock(return_value={'data': {'email': 'test@example.invalid'}})
         return client
 
     def test_turnstile_triggers_browser_fallback_success(self):
