@@ -8,12 +8,13 @@
 
 **已观察到的问题**：维护者运行及部分社区反馈出现 `code=5, reason=turnstile`（Cloudflare verification failed）；部分 GitHub Actions 无头浏览器尝试也未通过。这些记录不足以认定所有纯 API 请求或所有机房环境都必然失败。
 
-**本地单次测试记录**：现有 [`browser_checkin.py`](browser_checkin.py) 在接口明确返回 `reason=turnstile` 时，尝试用本机 Chrome（Edge → Chromium 回退）打开官方签到页，由页面处理验证并点击签到。北京时间 11 月 14 日 19:35，维护者单一账号返回 `Got 10`，余额从此前 15 变为 25，已读流水观察到当日 +10；没有交易标识将流水与请求严格关联。20:30 返回重复签到，不是再次增加 10 分。以上不证明其他账号、运行环境或后续日期可用。
+**本地实测记录**：现有 [`browser_checkin.py`](browser_checkin.py) 在接口明确返回 `reason=turnstile` 时，尝试用本机 Chrome（Edge → Chromium 回退）打开官方签到页，由页面处理验证并点击签到。北京时间 11 月 14 日 19:35，维护者单一账号返回 `Got 10`，余额从此前 15 变为 25，已读流水观察到当日 +10；没有交易标识将流水与请求严格关联。20:30 返回重复签到，不是再次增加 10 分。11 月 15 日 09:32 同账号再次成功（`Got 19`，25→44，当日 12:30 定时补签确认为幂等空跑），为连续第二天。以上仍是单一账号/单一环境记录，不证明其他账号、运行环境或后续日期必然可用。
 
-- **Actions 默认关闭**：检测到 `GITHUB_ACTIONS` 时默认不启用浏览器兜底，显式设置 `GLADOS_BROWSER_CHECKIN=1` 才会尝试。尚未验证 Actions 自动首次签到恢复；可用只读模式核对（`diagnose_only` / `notify_status_only`）。
-- **当前 main 的风险**：浏览器使用共享持久化 profile，未核验浏览器当前账号身份，存在多账号残留会话混用风险（并非已证实发生混用）；点击后丢失响应等模糊结果可能触发换域名或外层重试。未收到成功响应不等于没有提交成功，不应据此反复补签。
+- **适用范围与 Actions 行为**：仅限自己的电脑 + 真实浏览器。检测到 `GITHUB_ACTIONS` 时不启用浏览器兜底（显式 `GLADOS_BROWSER_CHECKIN=1` 才尝试）；**定时与外部触发（cron-job.org 等）的 Actions 运行自 `2fd0803` 起自动降级为只读状态推送**——不再尝试签到、不再产生必然的失败通知；手动运行（`dispatch_source=manual`）仍可选完整签到。官方若撤下 Turnstile，把仓库变量 `ALLOW_SCHEDULED_CHECKIN` 设为 `true` 即恢复定时完整签到。
+- **不是"绕过"**：人机验证仍由 Cloudflare 官方组件在真实浏览器中完成并放行；本仓库不提供打码或绕过方案。
+- **本地使用**：本机需有 Chrome 或 Edge（或执行 `python -m playwright install chromium`）→ `pip install -r requirements.txt` → 配置 `GLADOS_COOKIE` → 运行 `checkin.py`（或挂计划任务）。运行时会短暂弹出浏览器窗口，属正常流程，勿手动关闭。Cookie、UA、浏览器与运行环境需分别核对，失败时优先官网手动签到，不要为验证脚本而反复提交。
+- **当前 main 的已知风险**：浏览器使用共享持久化 profile，多账号场景存在残留会话混用风险（并非已证实发生混用）；点击后丢失响应等模糊结果可能触发换域名或外层重试——未收到成功响应不等于没有提交成功，不应据此反复补签。
 - **待验收方案**：[Draft PR #38](https://github.com/lankerr/2026-glados-checkin/pull/38) 拟加入会话隔离、身份核对、模糊结果停止重试和并发防护；**尚未合并 main、未部署到现有本地调度、未完成真实浏览器/真实签到验收**。离线测试通过不代表线上已解决。
-- **本地使用边界**：不能保证“无需重新配置”；Cookie、UA、浏览器和运行环境需分别核对。验证仍由官网组件决定是否放行，不能保证成功。存在上述风险时，优先使用官网手动签到，不要为验证脚本而反复提交。
 - **付费边界**：已有自述付费账号仍遇到低分或验证失败的反馈；付款不保证固定积分或免除 Turnstile，但不能外推为所有付费账号均无效。请勿仅为排查而购买套餐（见 [#37](https://github.com/lankerr/2026-glados-checkin/issues/37)）。
 
 **积分口径**：通知将"接口声称加分"与"积分流水观察"分开显示、不强行关联归属——同日同额不能证明是本次入账，历史流水也不代表本次奖励（相关讨论见 [#28](https://github.com/lankerr/2026-glados-checkin/issues/28)、[#37](https://github.com/lankerr/2026-glados-checkin/issues/37)）。
