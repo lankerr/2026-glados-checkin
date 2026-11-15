@@ -296,6 +296,31 @@ class CDPClient:
     def __init__(self, ws_url):
         self.ws = SimpleWebSocket(ws_url)
         self._msg_id = 0
+        self.checkin_request_id = None
+
+    def _handle_event(self, data):
+        if not isinstance(data, dict):
+            return
+        method = data.get('method', '')
+        params = data.get('params', {})
+        if method == 'Network.responseReceived':
+            resp = params.get('response', {})
+            url = resp.get('url', '')
+            if '/api/user/checkin' in url:
+                self.checkin_request_id = params.get('requestId')
+
+    def poll_events(self, timeout=0.2):
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            remaining = max(0.01, deadline - time.monotonic())
+            msg = self.ws.recv(timeout=remaining)
+            if not msg:
+                break
+            try:
+                data = json.loads(msg)
+                self._handle_event(data)
+            except ValueError:
+                pass
 
     def call(self, method, params=None, timeout=15):
         self._msg_id += 1
@@ -307,7 +332,7 @@ class CDPClient:
 
         deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
-            remaining = max(0.1, deadline - time.monotonic())
+            remaining = max(0.05, deadline - time.monotonic())
             msg = self.ws.recv(timeout=remaining)
             if not msg:
                 continue
@@ -315,6 +340,7 @@ class CDPClient:
                 data = json.loads(msg)
                 if data.get('id') == call_id:
                     return data
+                self._handle_event(data)
             except ValueError:
                 pass
         return None
@@ -403,10 +429,36 @@ def _try_domains_cdp(browser_path, cookie_header, headless, user_agent=None):
                         const url = (args[0] && args[0].url) || args[0] || '';
                         if (typeof url === 'string' && url.includes('/api/user/checkin')) {
                             const clone = resp.clone();
-                            clone.json().then(data => { window._glados_checkin_result = data; }).catch(() => {});
+                            clone.text().then(text => {
+                                try { window._glados_checkin_result = JSON.parse(text); }
+                                catch(e) { window._glados_checkin_result = { code: 0, message: text }; }
+                            }).catch(() => {});
                         }
                     } catch(e) {}
                     return resp;
+                };
+            }
+            if (window.XMLHttpRequest) {
+                const _XHR = window.XMLHttpRequest;
+                const _origOpen = _XHR.prototype.open;
+                const _origSend = _XHR.prototype.send;
+                _XHR.prototype.open = function(method, url) {
+                    this._glados_url = url;
+                    return _origOpen.apply(this, arguments);
+                };
+                _XHR.prototype.send = function() {
+                    this.addEventListener('load', function() {
+                        try {
+                            if (this._glados_url && String(this._glados_url).includes('/api/user/checkin')) {
+                                try {
+                                    window._glados_checkin_result = JSON.parse(this.responseText);
+                                } catch(e) {
+                                    window._glados_checkin_result = { code: 0, message: this.responseText };
+                                }
+                            }
+                        } catch(e) {}
+                    });
+                    return _origSend.apply(this, arguments);
                 };
             }
             """
@@ -466,10 +518,52 @@ def _try_domains_cdp(browser_path, cookie_header, headless, user_agent=None):
                 # 等待签到接口响应及 Turnstile 验证完成
                 result_deadline = time.monotonic() + RESULT_WAIT_SECONDS
                 while time.monotonic() < result_deadline and not captured['json']:
-                    res = cdp.evaluate("window._glados_checkin_result || null")
+                    cdp.poll_events(timeout=0.3)
+
+                    # 1. 优先通过 CDP Network.responseReceived 获取响应体
+                    if cdp.checkin_request_id:
+                        body_res = cdp.call('Network.getResponseBody', {'requestId': cdp.checkin_request_id})
+                        if body_res and 'result' in body_res and 'body' in body_res['result']:
+                            raw_body = body_res['result']['body']
+                            try:
+                                captured['json'] = json.loads(raw_body)
+                                _log("✅ 通过 CDP 网络事件成功捕获签到接口响应！")
+                                break
+                            except Exception:
+                                captured['json'] = {'code': 0, 'message': raw_body}
+                                break
+
+                    # 2. 检查 JavaScript hook (fetch & XHR) 以及页面 DOM 状态
+                    res = cdp.evaluate(r"""
+                    (() => {
+                        if (window._glados_checkin_result) {
+                            return { status: 'captured', json: window._glados_checkin_result };
+                        }
+                        const text = document.body ? document.body.innerText : '';
+                        if (/Points/i.test(text) && (/Streak/i.test(text) || /Days Left/i.test(text))) {
+                            const btn = Array.from(document.querySelectorAll('button, a, div[role="button"]'))
+                                .find(b => /check\s*in/i.test((b.textContent || '').trim()));
+                            if (!btn || btn.disabled) {
+                                return { status: 'already_completed' };
+                            }
+                        }
+                        return { status: 'waiting' };
+                    })()
+                    """)
+
                     if isinstance(res, dict):
-                        captured['json'] = res
-                        break
+                        if res.get('status') == 'captured' and res.get('json'):
+                            captured['json'] = res['json']
+                            _log("✅ 通过页面 JS Hook 成功捕获签到结果！")
+                            break
+                        elif res.get('status') == 'already_completed':
+                            captured['json'] = {
+                                'code': 0,
+                                'message': "Today's observation logged. Return tomorrow for more points.",
+                            }
+                            _log("✅ 页面已呈现签到完成状态（检测到 Points 与 Streak 面板）！")
+                            break
+
                     time.sleep(0.5)
 
                 result = captured['json']
