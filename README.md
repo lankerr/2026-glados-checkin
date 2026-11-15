@@ -17,10 +17,10 @@ pip install -r requirements.txt
 python checkin.py
 ```
 
-挂系统计划任务即可每天自动跑（如 Windows 任务计划程序每天 09:30 调用；脚本幂等，重复运行只会提示"今日已签到"）。运行时短暂弹出浏览器窗口属正常流程，勿手动关闭。
+可配置单一系统计划任务每天尝试运行（如 Windows 任务计划程序每天 09:30 调用），但不能保证每天成功，也不能保证重复运行只返回“今日已签到”。当前代码在响应丢失等结果不明确时可能再次提交，且共享浏览器 profile 存在多账号会话混用风险；尚未观察到重复奖励或账号混用，不能把风险当作已发生的事故。结果不明确时请先核对官网记录，不要为验证而重复运行或并发运行。运行时短暂弹出浏览器窗口属正常流程。
 
 - 只想核对状态不弹浏览器：`CHECKIN_NOTIFY_STATUS_ONLY=true`
-- 云端 Actions 用户：定时/外部触发的运行默认已降级为只读状态推送（不试签到、不报失败）；手动 Run workflow 选 `dispatch_source=manual` 可试完整签到（机房 IP 大概率仍被拦）
+- 云端 Actions 用户：定时/外部触发的运行默认已降级为只读状态推送（不试签到；查询或推送仍可能失败）；手动 Run workflow 选 `dispatch_source=manual` 可试完整签到（机房 IP 大概率仍被拦）
 - Cookie 过期（日志出现 401 / 请登录 / device-mismatch）才需要重新复制，参考下方说明
 
 > [!WARNING]
@@ -31,9 +31,9 @@ python checkin.py
 
 **已观察到的问题**：维护者运行及部分社区反馈出现 `code=5, reason=turnstile`（Cloudflare verification failed）；部分 GitHub Actions 无头浏览器尝试也未通过。这些记录不足以认定所有纯 API 请求或所有机房环境都必然失败。
 
-**本地实测记录**：现有 [`browser_checkin.py`](browser_checkin.py) 在接口明确返回 `reason=turnstile` 时，尝试用本机 Chrome（Edge → Chromium 回退）打开官方签到页，由页面处理验证并点击签到。北京时间 11 月 14 日 19:35，维护者单一账号返回 `Got 10`，余额从此前 15 变为 25，已读流水观察到当日 +10；没有交易标识将流水与请求严格关联。20:30 返回重复签到，不是再次增加 10 分。11 月 15 日 09:32 同账号再次成功（`Got 19`，25→44，当日 12:30 定时补签确认为幂等空跑），为连续第二天。以上仍是单一账号/单一环境记录，不证明其他账号、运行环境或后续日期必然可用。
+**本地实测记录**：现有 [`browser_checkin.py`](browser_checkin.py) 在接口明确返回 `reason=turnstile` 时，尝试用本机 Chrome（Edge → Chromium 回退）打开官方签到页，由页面处理验证并点击签到。北京时间 11 月 14 日 19:35，维护者单一账号返回 `Got 10`，余额从此前 15 变为 25，已读流水观察到当日 +10；没有交易标识将流水与请求严格关联。20:30 返回重复签到，不是再次增加 10 分。11 月 15 日 09:32 同账号再次成功（`Got 19`，25→44，当日 12:30 定时补签记录为重复签到；单次重复签到结果不证明脚本整体幂等），为连续第二天。以上仍是单一账号/单一环境记录，不证明其他账号、运行环境或后续日期必然可用。
 
-- **适用范围与 Actions 行为**：仅限自己的电脑 + 真实浏览器。检测到 `GITHUB_ACTIONS` 时不启用浏览器兜底（显式 `GLADOS_BROWSER_CHECKIN=1` 才尝试）；**定时与外部触发（cron-job.org 等）的 Actions 运行自 `2fd0803` 起自动降级为只读状态推送**——不再尝试签到、不再产生必然的失败通知；手动运行（`dispatch_source=manual`）仍可选完整签到。官方若撤下 Turnstile，把仓库变量 `ALLOW_SCHEDULED_CHECKIN` 设为 `true` 即恢复定时完整签到。
+- **适用范围与 Actions 行为**：仅限自己的电脑 + 真实浏览器。检测到 `GITHUB_ACTIONS` 时不启用浏览器兜底（显式 `GLADOS_BROWSER_CHECKIN=1` 才尝试）；**定时与外部触发（cron-job.org 等）的 Actions 运行自 [`d279a6a`](https://github.com/lankerr/2026-glados-checkin/commit/d279a6a7a5c136ecdab5f5253758994eb4ee6595) 起默认降级为只读状态推送**——不再尝试签到；状态查询或推送本身仍可能失败；手动运行（`dispatch_source=manual`）仍可选完整签到。官方若撤下 Turnstile，把仓库变量 `ALLOW_SCHEDULED_CHECKIN` 设为 `true` 即恢复定时完整签到。
 - **不是"绕过"**：人机验证仍由 Cloudflare 官方组件在真实浏览器中完成并放行；本仓库不提供打码或绕过方案。
 - **本地使用**：本机需有 Chrome 或 Edge（或执行 `python -m playwright install chromium`）→ `pip install -r requirements.txt` → 配置 `GLADOS_COOKIE` → 运行 `checkin.py`（或挂计划任务）。运行时会短暂弹出浏览器窗口，属正常流程，勿手动关闭。Cookie、UA、浏览器与运行环境需分别核对，失败时优先官网手动签到，不要为验证脚本而反复提交。
 - **当前 main 的已知风险**：浏览器使用共享持久化 profile，多账号场景存在残留会话混用风险（并非已证实发生混用）；点击后丢失响应等模糊结果可能触发换域名或外层重试——未收到成功响应不等于没有提交成功，不应据此反复补签。
