@@ -551,6 +551,8 @@ class GLaDOS:
         self.points_change = "?"
         self.points_change_time = "未知"
         self.today_positive_change = None
+        self.today_rewards_total = None
+        self.today_rewards_count = 0
         self.has_dated_history = False
         self.exchange_info = ""
         self.exchange_result = ""
@@ -638,8 +640,11 @@ class GLaDOS:
             self.points_change = '?'
             self.points_change_time = '未知'
             self.today_positive_change = None
+            self.today_rewards_total = None
+            self.today_rewards_count = 0
             self.has_dated_history = False
             today_bj = beijing_now().strftime('%Y-%m-%d')
+            today_reward_values = []
 
             history = res.get('history')
             if not isinstance(history, list):
@@ -663,14 +668,21 @@ class GLaDOS:
                     entry_num = parse_finite_number(item.get('change'))
                     business = str(item.get('business', '')).strip().lower()
                     if (
-                        self.today_positive_change is None
-                        and entry_date == today_bj
+                        entry_date == today_bj
                         and entry_num is not None
                         and entry_num > 0
                         and 'exchange' not in business
                         and 'refund' not in business
                     ):
-                        self.today_positive_change = format_points_number(entry_num, signed=True)
+                        if self.today_positive_change is None:
+                            self.today_positive_change = format_points_number(entry_num, signed=True)
+                        today_reward_values.append(entry_num)
+
+                if today_reward_values:
+                    total = format_points_number(sum(today_reward_values), signed=True)
+                    if total is not None:
+                        self.today_rewards_total = total
+                        self.today_rewards_count = len(today_reward_values)
 
             # 兑换计划
             plans = res.get('plans', {})
@@ -876,6 +888,15 @@ def telegram_push(token, chat_id, title, content):
         log(f"❌ Telegram 推送失败: {e}")
         return False
 
+def today_rewards_summary(client):
+    """今日加分合计（流水口径）：当日全部正变动加总，明确标注含所有来源。"""
+    total = getattr(client, 'today_rewards_total', None)
+    count = getattr(client, 'today_rewards_count', 0) or 0
+    if not isinstance(total, str):
+        return ''
+    return f'；今日加分合计 {total} 分（当日 {count} 笔正变动流水，含所有来源，未关联本次请求）'
+
+
 def summarize_readonly_ledger(client, status_ok, points_ok):
     """Describe ledger observations in read-only mode without sending a check-in."""
     if not status_ok:
@@ -912,10 +933,18 @@ def render_account_card(
         if client.points_change != '?' else '未获取'
     )
     days_label = f'{client.left_days} 天' if client.left_days != '?' else '未获取'
+    today_gain_line = ''
+    if isinstance(getattr(client, 'today_rewards_total', None), str):
+        today_gain_line = (
+            '\n    <p style="margin:8px 0; color:#000; font-size:16px;">'
+            f'<b>今日加分:</b> <span style="color:#2e7d32; font-size:20px; font-weight:bold;">'
+            f'{html.escape(str(client.today_rewards_total))}</span>'
+            f' 分（当日 {client.today_rewards_count} 笔流水合计，含所有来源）</p>'
+        )
     return f"""
 <div style="border:2px solid #333; padding:15px; margin-bottom:15px; border-radius:10px; background:#fff;">
     <h3 style="margin:0 0 15px 0; color:#333; border-bottom:2px solid #333; padding-bottom:8px;">👤 {html.escape(account_label)}</h3>
-    <p style="margin:8px 0; color:#000; font-size:16px;"><b>当前积分:</b> <span style="color:#e74c3c; font-size:22px; font-weight:bold;">{html.escape(points_label)}</span></p>
+    <p style="margin:8px 0; color:#000; font-size:16px;"><b>当前积分:</b> <span style="color:#e74c3c; font-size:22px; font-weight:bold;">{html.escape(points_label)}</span></p>{today_gain_line}
     <p style="margin:8px 0; color:#000; font-size:15px;"><b>{html.escape(gain_heading)}:</b> {html.escape(gain_summary)}</p>
     <p style="margin:8px 0; color:#666; font-size:14px;"><b>最近一笔积分变动:</b> {html.escape(history_label)}</p>
     <p style="margin:8px 0; color:#000; font-size:16px;"><b>剩余天数:</b> <span style="font-weight:bold;">{html.escape(days_label)}</span></p>
@@ -952,6 +981,7 @@ def notify_status_accounts(cookies):
             msg = '登录状态读取未成功，请检查会话配置或网络（未发起签到请求）'
 
         gain_summary = summarize_readonly_ledger(g, status_ok, points_ok)
+        gain_summary += today_rewards_summary(g)
         log(
             f"{'✅' if query_ok else '❌'} 账号 {i} | 积分: {g.points} | 流水观察: {gain_summary} | "
             f"天数: {g.left_days} | 模式: {msg}"
@@ -1073,6 +1103,7 @@ def main():
             g.get_status()
             g.get_points()
             gain_summary = summarize_current_run_gain(res, is_success, g)
+            gain_summary += today_rewards_summary(g)
 
             # 2.5 Auto exchange (issue #11): runs only after a normal check-in
             # so failed check-ins do not trigger unexpected redemptions.

@@ -70,3 +70,42 @@ class AttributionTests(unittest.TestCase):
             self.observe([{'time': MS, 'change': 2}]))
         self.assertIn('不据此推断封顶规则', summary)
         self.assertNotIn('受上限', summary)
+
+
+class TodayRewardsTotalTests(unittest.TestCase):
+    def test_sums_all_today_positive_entries_excluding_exchange(self):
+        client = checkin.GLaDOS('gld:sess=fake; gld:sess.sig=fake')
+        client.req = mock.Mock(return_value={'points': 44, 'history': [
+            {'change': '19', 'time': MS},
+            {'change': '10', 'time': MS},
+            {'change': '14', 'time': MS - 86400000},          # 昨天：不计
+            {'change': '-500', 'time': MS, 'business': 'exchange'},  # 兑换：不计
+            {'change': '1.5', 'time': MS},                    # 小数：计入
+        ], 'plans': {}})
+        with mock.patch('checkin.beijing_now', return_value=NOW):
+            client.get_points()
+        self.assertEqual(client.today_rewards_total, '+30.5')
+        self.assertEqual(client.today_rewards_count, 3)
+        summary = checkin.today_rewards_summary(client)
+        self.assertIn('今日加分合计 +30.5 分（当日 3 笔正变动流水', summary)
+
+    def test_no_today_entries_yields_empty_summary(self):
+        client = checkin.GLaDOS('gld:sess=fake; gld:sess.sig=fake')
+        client.req = mock.Mock(return_value={'points': 5, 'history': [
+            {'change': '14', 'time': MS - 86400000}], 'plans': {}})
+        with mock.patch('checkin.beijing_now', return_value=NOW):
+            client.get_points()
+        self.assertIsNone(client.today_rewards_total)
+        self.assertEqual(checkin.today_rewards_summary(client), '')
+
+    def test_push_card_shows_today_gain_line(self):
+        client = checkin.GLaDOS('gld:sess=fake; gld:sess.sig=fake')
+        client.req = mock.Mock(return_value={'points': 44, 'history': [
+            {'change': '19', 'time': MS}, {'change': '10', 'time': MS},
+        ], 'plans': {}})
+        with mock.patch('checkin.beijing_now', return_value=NOW):
+            client.get_points()
+        card = checkin.render_account_card(1, client, '观察', 'OK')
+        self.assertIn('今日加分', card)
+        self.assertIn('+29', card)
+        self.assertIn('2 笔流水合计', card)
