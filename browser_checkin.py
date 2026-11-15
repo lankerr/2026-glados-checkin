@@ -473,6 +473,21 @@ def _try_domains_cdp(browser_path, cookie_header, headless, user_agent=None):
                     time.sleep(0.5)
 
                 result = captured['json']
+                if not result:
+                    try:
+                        snap = cdp.call('Page.captureScreenshot', {'format': 'png'})
+                        if snap and 'result' in snap and 'data' in snap['result']:
+                            netloc = urlsplit(base).netloc.replace(':', '_')
+                            snap_path = os.path.join('logs', f'browser_checkin_timeout_{netloc}.png')
+                            with open(snap_path, 'wb') as f:
+                                f.write(base64.b64decode(snap['result']['data']))
+                            _log(f"⚠️ 等待验证超时（截图已存 {snap_path}）")
+                    except Exception:
+                        pass
+                    last_error = f'{base}: 等待 Turnstile 验证或签到响应超时 ({RESULT_WAIT_SECONDS}s)'
+                    _log(f"⚠️ {last_error}，尝试下一个域名")
+                    continue
+
                 if result:
                     if isinstance(result, dict) and result.get('reason') == 'turnstile':
                         try:
