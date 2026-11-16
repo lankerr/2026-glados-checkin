@@ -117,6 +117,8 @@ python checkin.py
 
 **⭐ 觉得有用？点个 Star 支持一下！**
 
+[![Star History Chart](https://api.star-history.com/svg?repos=lankerr/2026-glados-checkin&type=Date)](https://star-history.com/#lankerr/2026-glados-checkin&Date)
+
 </div>
 
 ---
