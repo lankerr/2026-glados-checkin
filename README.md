@@ -2,9 +2,9 @@
 
 # GLaDOS Check-in
 
-**本地签到 · 云端核对 · 清晰通知**
+**本地签到，云端核对。让积分变化有据可查。**
 
-一个非官方的 GLaDOS 签到与账号状态工具。把执行结果和积分记录分开看，让每天的状态更容易确认。
+非官方 GLaDOS 社区工具 · Python / GitHub Actions / 可选消息推送
 
 [![Workflow](https://github.com/lankerr/2026-glados-checkin/actions/workflows/checkin.yml/badge.svg)](https://github.com/lankerr/2026-glados-checkin/actions/workflows/checkin.yml)
 [![Stars](https://img.shields.io/github/stars/lankerr/2026-glados-checkin?style=flat&color=d9a441)](https://github.com/lankerr/2026-glados-checkin/stargazers)
@@ -16,7 +16,36 @@
 
 ---
 
-## 先选一种使用方式
+## 不止看绿灯，更要看结果
+
+| 本地执行，云端核对 | 签到结果与流水分开看 | 通知与排障留有依据 |
+| --- | --- | --- |
+| 本地尝试签到；云端默认只读核对状态，不把查询当作签到。 | 同时展示接口结果、余额与已读流水，不把历史奖励算作本次成功。 | 可选微信 / Telegram 通知，保留脱敏错误与明确的运行边界。 |
+
+**已有连续实测记录：** 维护者单一账号在 2026-11-14 / 15 / 16 分别观察到 **+10 / +19 / +12** 入账。[查看观察范围与来源](docs/status-notes.md)
+
+<sub>这是单账号、单环境观察，不保证其他账号或每天成功。实际奖励以官网记录为准。</sub>
+
+<a id="history"></a>
+## 项目趋势
+
+[查看 Star History 交互页](https://www.star-history.com/#lankerr/2026-glados-checkin&Date) · [手绘图工具源码](https://github.com/star-history/star-history)
+
+**仓库总数：108 Stars · 347 Forks**
+
+[![108 Stars and 347 official Forks, with 350 enumerable network records](docs/assets/star-fork-history.svg)](docs/star-fork-data.md)
+
+<sub>2026-11-16 静态快照 · Star History 官方手绘组件 · Stars 108；官方 Fork 总数快照 347，递归可枚举 Fork 网络 350（含间接 Fork）。两者口径不同、差异原因未定；图不会自动更新。[数据口径与 CSV](docs/star-fork-data.md)</sub>
+
+---
+
+<a id="quick-start"></a>
+## 快速开始
+
+> [!IMPORTANT]
+> 完整签到模式默认启用 `EXCHANGE_PLAN=plan500` 积分自动兑换。不希望兑换时先设 `off`；只读模式不会兑换。
+
+### 选择你的使用方式
 
 | 你想做什么 | 推荐入口 | 会发生什么 |
 | --- | --- | --- |
@@ -24,13 +53,7 @@
 | 不开电脑，只核对状态 | [GitHub Actions](#actions) | 定时读取积分、剩余天数并推送，不代表完成签到 |
 | 先确认 Cookie 是否有效 | [只读诊断](#diagnostics) | 只查询状态，不签到、不兑换、不推送 |
 
-> [!IMPORTANT]
-> **当前不是“云端自动签到已恢复”。** Actions 的定时与外部触发默认只读。本地已有维护者账号成功记录，但不保证所有账号、环境或后续日期都成功。
->
-> 完整签到模式默认启用积分自动兑换（`EXCHANGE_PLAN=plan500`）。不希望兑换时，先设为 `off`。只读模式不会兑换。
-
-<a id="quick-start"></a>
-## 快速开始
+> Actions 定时默认**只读核对**，不是云端首次签到；本地成功记录不代表普遍或长期保证。[查看运行边界](#status)
 
 <a id="local"></a>
 ### 1. 本地运行
@@ -150,15 +173,6 @@ python checkin.py
 
 </details>
 
-<a id="history"></a>
-## 项目趋势
-
-[查看 Star History 交互页](https://www.star-history.com/#lankerr/2026-glados-checkin&Date) · [手绘图工具源码](https://github.com/star-history/star-history)
-
-[![Star and Fork history, static snapshot](docs/assets/star-fork-history.svg)](docs/star-fork-data.md)
-
-<sub>2026-11-16 静态快照 · Star History 官方手绘组件 · Stars 108；Fork 可列出记录 303，仓库总数 347。缺失日期不补造，图不会自动更新。[数据口径与 CSV](docs/star-fork-data.md)</sub>
-
 <a id="privacy"></a>
 ## 使用与隐私
 
@@ -172,16 +186,20 @@ python checkin.py
 
 反馈时请附上版本或 commit、运行环境、脱敏错误和只读诊断结果。不要为了反馈而重复签到或购买套餐。
 
-[提交问题](https://github.com/lankerr/2026-glados-checkin/issues) · [贡献者与致谢](docs/contributors.md) · [更新记录](docs/changelog.md)
+[提交问题](https://github.com/lankerr/2026-glados-checkin/issues) · [贡献者与致谢](docs/contributors.md) · [更新记录](docs/changelog.md) · [旧版知识归档](docs/archive/README-20261116.md)
 
 维护者与社区共同改进这个项目。感谢每一次认真反馈和 Pull Request。
+
+## 许可
+
+沿用原项目 README 的 MIT 许可声明。图表组件的第三方许可单独保留于 [Star History License](docs/star-history-LICENSE.txt)。
 
 ---
 
 <details>
 <summary>旧版文档链接入口</summary>
 
-旧版首页的配置、图解、常见问题和部署教程已整理到 [使用手册](docs/usage.md)。历史修复见 [更新记录](docs/changelog.md)，贡献名单见 [致谢](docs/contributors.md)。下列兼容锚点保留旧链接定位，内容请从上述入口阅读。
+旧版首页的配置、图解、常见问题和部署教程已整理到 [使用手册](docs/usage.md)，完整旧文另存 [历史归档](docs/archive/README-20261116.md)。历史修复见 [更新记录](docs/changelog.md)，贡献名单见 [致谢](docs/contributors.md)。下列兼容锚点保留旧链接定位，内容请从上述入口阅读。
 
 <!-- legacy-anchor-start -->
 <a id="-5-分钟配置-glados-自动签到"></a>
