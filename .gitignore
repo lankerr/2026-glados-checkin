@@ -6,3 +6,4 @@ browser_profile/
 logs/
 *.png
 *.zip
+!extension/icons/*.png
