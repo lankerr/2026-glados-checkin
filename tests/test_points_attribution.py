@@ -110,3 +110,40 @@ class TodayRewardsTotalTests(unittest.TestCase):
         self.assertIn('+29', card)
         self.assertIn('已返回前10条流水中 2 笔', card)
 
+
+
+class RecentEntriesTests(unittest.TestCase):
+    def test_recent_entries_collected_and_card_renders_mini_ledger(self):
+        client = checkin.GLaDOS('gld:sess=fake; gld:sess.sig=fake')
+        client.req = mock.Mock(return_value={'points': 56, 'history': [
+            {'change': '12', 'time': MS},
+            {'change': '19', 'time': MS - 86400000},
+            {'change': '-500', 'time': MS - 86400000, 'business': 'exchange'},
+        ], 'plans': {}})
+        with mock.patch('checkin.beijing_now', return_value=NOW):
+            client.get_points()
+        self.assertEqual(len(client.recent_entries), 3)
+        self.assertEqual(client.recent_entries[0]['change'], '+12')
+        card = checkin.render_account_card(1, client, '观察', 'OK')
+        self.assertIn('近期积分流水', card)
+        self.assertIn('+12', card)
+        self.assertIn('-500', card)
+
+
+class StreakStateTests(unittest.TestCase):
+    def test_continuation_and_first_run_and_gap(self):
+        from datetime import date
+        from update_streak import next_state, parse_block, render_block
+        today = date(2026, 11, 17)
+        # ① 连续推进：昨天有记录
+        c, d, ch = next_state(3, '2026-11-16', {'2026-11-17', '2026-11-16'}, today)
+        self.assertEqual((c, d, ch), (4, '2026-11-17', True))
+        # ② 今日未入账：原样保持
+        c, d, ch = next_state(4, '2026-11-17', set(), today)
+        self.assertEqual((c, d, ch), (4, '2026-11-17', False))
+        # ③ 断档后从窗口重算
+        c, d, ch = next_state(30, '2026-11-01', {'2026-11-17', '2026-11-16'}, today)
+        self.assertEqual((c, d, ch), (2, '2026-11-17', True))
+        # ④ 标记块解析与渲染往返
+        block = render_block(4, '2026-11-17', '+12')
+        self.assertEqual(parse_block(block), (4, '2026-11-17'))

@@ -32,8 +32,8 @@ from urllib.parse import urlsplit
 # 浏览器通道优先级：真实 Chrome > 真实 Edge > Playwright 自带 Chromium
 BROWSER_CHANNELS = ('chrome', 'msedge', None)
 CHECKIN_PAGE_PATH = '/console/checkin'
-# glados.network 当前 DNS 不稳定，暂不参与浏览器回退
-DOMAINS = ('https://glados.cloud', 'https://glados.rocks')
+# 2026-11-17 实测在线的官方域名（one 为旧域名，留作最后回退）
+DOMAINS = ('https://glados.cloud', 'https://glados.rocks', 'https://glados.network', 'https://glados.space', 'https://glados.one')
 # 页面自身等待 Turnstile 最长约 90s + 2.5s 最小间隔 + 网络余量
 RESULT_WAIT_SECONDS = 150
 BUTTON_WAIT_SECONDS = 45

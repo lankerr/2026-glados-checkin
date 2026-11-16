@@ -34,8 +34,11 @@ if sys.platform.startswith('win'):
 # 域名优先级：Cloud 第一
 DOMAINS = [
     "https://glados.cloud",
-    "https://glados.rocks", 
+    "https://glados.rocks",
     "https://glados.network",
+    "https://glados.space",
+    # 旧域名留作最后回退（2026-11-17 实测仍在线）
+    "https://glados.one",
 ]
 
 DEFAULT_USER_AGENT = (
@@ -553,6 +556,7 @@ class GLaDOS:
         self.today_positive_change = None
         self.today_rewards_total = None
         self.today_rewards_count = 0
+        self.recent_entries = []
         self.has_dated_history = False
         self.exchange_info = ""
         self.exchange_result = ""
@@ -642,6 +646,7 @@ class GLaDOS:
             self.today_positive_change = None
             self.today_rewards_total = None
             self.today_rewards_count = 0
+            self.recent_entries = []
             self.has_dated_history = False
             today_bj = beijing_now().strftime('%Y-%m-%d')
             today_reward_values = []
@@ -662,11 +667,18 @@ class GLaDOS:
                 for item in history[:10]:
                     if not isinstance(item, dict):
                         continue
-                    _, entry_date = format_beijing_timestamp_ms(item.get('time'))
+                    formatted_full, entry_date = format_beijing_timestamp_ms(item.get('time'))
                     if entry_date:
                         self.has_dated_history = True
                     entry_num = parse_finite_number(item.get('change'))
                     business = str(item.get('business', '')).strip().lower()
+                    if len(self.recent_entries) < 10:
+                        self.recent_entries.append({
+                            'date': entry_date,
+                            'time': (formatted_full or '').split(' ')[0],
+                            'change': format_points_number(entry_num, signed=True) or '?',
+                            'business': business,
+                        })
                     if (
                         entry_date == today_bj
                         and entry_num is not None
@@ -933,6 +945,24 @@ def render_account_card(
         if client.points_change != '?' else '未获取'
     )
     days_label = f'{client.left_days} 天' if client.left_days != '?' else '未获取'
+    ledger_table = ''
+    recent = getattr(client, 'recent_entries', None)
+    if isinstance(recent, list) and recent:
+        rows = ''.join(
+            '<tr>'
+            f'<td style="padding:2px 8px;color:#666;">{html.escape(e["time"] or e["date"] or "?")}</td>'
+            f'<td style="padding:2px 8px;text-align:right;font-weight:bold;color:'
+            f'{"#2e7d32" if str(e["change"]).startswith("+") else "#c62828"};">{html.escape(str(e["change"]))}</td>'
+            f'<td style="padding:2px 8px;color:#999;">{html.escape(e["business"] or "-")}</td>'
+            '</tr>'
+            for e in recent[:6]
+        )
+        extra = f'<tr><td colspan="3" style="padding:2px 8px;color:#999;">… 共 {len(recent)} 笔（API 返回窗口）</td></tr>' if len(recent) > 6 else ''
+        ledger_table = (
+            '<div style="margin:8px 0; padding:8px; background:#fafafa; border-radius:8px;">'
+            '<p style="margin:0 0 4px 0; color:#333; font-weight:bold; font-size:14px;">📅 近期积分流水</p>'
+            f'<table style="border-collapse:collapse; font-size:13px;">{rows}{extra}</table></div>'
+        )
     today_gain_line = ''
     if isinstance(getattr(client, 'today_rewards_total', None), str):
         today_gain_line = (
@@ -944,7 +974,7 @@ def render_account_card(
     return f"""
 <div style="border:2px solid #333; padding:15px; margin-bottom:15px; border-radius:10px; background:#fff;">
     <h3 style="margin:0 0 15px 0; color:#333; border-bottom:2px solid #333; padding-bottom:8px;">👤 {html.escape(account_label)}</h3>
-    <p style="margin:8px 0; color:#000; font-size:16px;"><b>当前积分:</b> <span style="color:#e74c3c; font-size:22px; font-weight:bold;">{html.escape(points_label)}</span></p>{today_gain_line}
+    <p style="margin:8px 0; color:#000; font-size:16px;"><b>当前积分:</b> <span style="color:#e74c3c; font-size:22px; font-weight:bold;">{html.escape(points_label)}</span></p>{today_gain_line}{ledger_table}
     <p style="margin:8px 0; color:#000; font-size:15px;"><b>{html.escape(gain_heading)}:</b> {html.escape(gain_summary)}</p>
     <p style="margin:8px 0; color:#666; font-size:14px;"><b>最近一笔积分变动:</b> {html.escape(history_label)}</p>
     <p style="margin:8px 0; color:#000; font-size:16px;"><b>剩余天数:</b> <span style="font-weight:bold;">{html.escape(days_label)}</span></p>
