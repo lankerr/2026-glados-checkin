@@ -20,4 +20,3 @@
 **积分口径**：通知将"接口声称加分"与"积分流水观察"分开显示、不强行关联归属——同日同额不能证明是本次入账，历史流水也不代表本次奖励（相关讨论见 [#28](https://github.com/lankerr/2026-glados-checkin/issues/28)、[#37](https://github.com/lankerr/2026-glados-checkin/issues/37)）。
 
 **隐私**：任何反馈都不要公开 Cookie、Token、密码、验证码、nonce/proof、完整请求头、HAR 或含邮箱/账号信息的截图。
-
