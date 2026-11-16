@@ -963,3 +963,7 @@ MIT
 
 </div>
 
+
+## ⭐ Star History
+
+![Star History](images/star-history.png)
