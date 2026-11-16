@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<style>
+  body { font-family: system-ui, "Segoe UI", sans-serif; width: 300px; margin: 0; padding: 14px; background: #fafafa; }
+  h1 { font-size: 15px; margin: 0 0 10px; color: #333; }
+  .row { display: flex; justify-content: space-between; padding: 4px 0; font-size: 13px; color: #444; }
+  .row b { color: #111; }
+  .fire { color: #e377c2; font-weight: 700; }
+  button { margin-top: 10px; width: 100%; padding: 8px; border: 0; border-radius: 8px;
+           background: #e377c2; color: #fff; font-size: 14px; cursor: pointer; }
+  button:disabled { background: #ccc; }
+  .note { margin-top: 8px; font-size: 11px; color: #999; line-height: 1.5; }
+</style>
+</head>
+<body>
+<h1>🎁 GLaDOS Check-in</h1>
+<div class="row"><span>🔥 连续入账</span><b class="fire" id="streak">-</b></div>
+<div class="row"><span>✅ 今日状态</span><b id="today">-</b></div>
+<div class="row"><span>💰 当前积分</span><b id="points">-</b></div>
+<div class="row"><span>⏰ 每日时段</span><b>09:30 / 12:30 / 20:30</b></div>
+<button id="run">立即签到</button>
+<div class="note">零配置：用浏览器自身登录态。已在别处签到时扩展自动跳过。签到由官方页面完成人机验证。</div>
+<script src="popup.js"></script>
+</body>
+</html>
