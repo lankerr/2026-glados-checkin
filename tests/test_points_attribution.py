@@ -73,7 +73,7 @@ class AttributionTests(unittest.TestCase):
 
 
 class TodayRewardsTotalTests(unittest.TestCase):
-    def test_sums_all_today_positive_entries_excluding_exchange(self):
+    def test_sums_eligible_today_entries_in_returned_window(self):
         client = checkin.GLaDOS('gld:sess=fake; gld:sess.sig=fake')
         client.req = mock.Mock(return_value={'points': 44, 'history': [
             {'change': '19', 'time': MS},
@@ -87,7 +87,7 @@ class TodayRewardsTotalTests(unittest.TestCase):
         self.assertEqual(client.today_rewards_total, '+30.5')
         self.assertEqual(client.today_rewards_count, 3)
         summary = checkin.today_rewards_summary(client)
-        self.assertIn('今日加分合计 +30.5 分（当日 3 笔正变动流水', summary)
+        self.assertIn('今日符合条件的正变动小计 +30.5 分（已返回前10条流水中 3 笔', summary)
 
     def test_no_today_entries_yields_empty_summary(self):
         client = checkin.GLaDOS('gld:sess=fake; gld:sess.sig=fake')
@@ -106,6 +106,7 @@ class TodayRewardsTotalTests(unittest.TestCase):
         with mock.patch('checkin.beijing_now', return_value=NOW):
             client.get_points()
         card = checkin.render_account_card(1, client, '观察', 'OK')
-        self.assertIn('今日加分', card)
+        self.assertIn('今日符合条件的正变动小计', card)
         self.assertIn('+29', card)
-        self.assertIn('2 笔流水合计', card)
+        self.assertIn('已返回前10条流水中 2 笔', card)
+

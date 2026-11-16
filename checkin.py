@@ -889,12 +889,12 @@ def telegram_push(token, chat_id, title, content):
         return False
 
 def today_rewards_summary(client):
-    """今日加分合计（流水口径）：当日全部正变动加总，明确标注含所有来源。"""
+    """Describe the eligible subtotal within the first ten returned ledger entries."""
     total = getattr(client, 'today_rewards_total', None)
     count = getattr(client, 'today_rewards_count', 0) or 0
     if not isinstance(total, str):
         return ''
-    return f'；今日加分合计 {total} 分（当日 {count} 笔正变动流水，含所有来源，未关联本次请求）'
+    return f'；今日符合条件的正变动小计 {total} 分（已返回前10条流水中 {count} 笔；排除 exchange/refund 及无效日期/金额，完整性未确认，非全天合计，未关联本次请求）'
 
 
 def summarize_readonly_ledger(client, status_ok, points_ok):
@@ -937,9 +937,9 @@ def render_account_card(
     if isinstance(getattr(client, 'today_rewards_total', None), str):
         today_gain_line = (
             '\n    <p style="margin:8px 0; color:#000; font-size:16px;">'
-            f'<b>今日加分:</b> <span style="color:#2e7d32; font-size:20px; font-weight:bold;">'
+            f'<b>今日符合条件的正变动小计:</b> <span style="color:#2e7d32; font-size:20px; font-weight:bold;">'
             f'{html.escape(str(client.today_rewards_total))}</span>'
-            f' 分（当日 {client.today_rewards_count} 笔流水合计，含所有来源）</p>'
+            f' 分（已返回前10条流水中 {client.today_rewards_count} 笔；排除 exchange/refund 及无效日期/金额，完整性未确认，非全天合计，未关联本次请求）</p>'
         )
     return f"""
 <div style="border:2px solid #333; padding:15px; margin-bottom:15px; border-radius:10px; background:#fff;">
@@ -1167,3 +1167,4 @@ def main():
 
 if __name__ == '__main__':
     sys.exit(main())
+
