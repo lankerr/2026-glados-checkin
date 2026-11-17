@@ -1,921 +1,280 @@
-# 🎁 5 分钟配置 GLaDOS 自动签到
-
-> [!WARNING]
-> **2026-11-14：已观察到 Turnstile 验证拒绝；仅有维护者单一账号一次本地浏览器测试返回 +10 的记录，不能视为通用或长期修复。Actions 默认关闭浏览器兜底；安全收紧方案 #38 尚未合并、部署或完成真实浏览器验收。**
-
-<a id="status-2026-11-14"></a>
-## 📢 2026-11-14 公告：Turnstile 观察结果与待修复风险
-
-**已观察到的问题**：维护者运行及部分社区反馈出现 `code=5, reason=turnstile`（Cloudflare verification failed）；部分 GitHub Actions 无头浏览器尝试也未通过。这些记录不足以认定所有纯 API 请求或所有机房环境都必然失败。
-
-**本地单次测试记录**：现有 [`browser_checkin.py`](browser_checkin.py) 在接口明确返回 `reason=turnstile` 时，尝试用本机 Chrome（Edge → Chromium 回退）打开官方签到页，由页面处理验证并点击签到。北京时间 11 月 14 日 19:35，维护者单一账号返回 `Got 10`，余额从此前 15 变为 25，已读流水观察到当日 +10；没有交易标识将流水与请求严格关联。20:30 返回重复签到，不是再次增加 10 分。以上不证明其他账号、运行环境或后续日期可用。
-
-- **Actions 默认关闭**：检测到 `GITHUB_ACTIONS` 时默认不启用浏览器兜底，显式设置 `GLADOS_BROWSER_CHECKIN=1` 才会尝试。尚未验证 Actions 自动首次签到恢复；可用只读模式核对（`diagnose_only` / `notify_status_only`）。
-- **当前 main 的风险**：浏览器使用共享持久化 profile，未核验浏览器当前账号身份，存在多账号残留会话混用风险（并非已证实发生混用）；点击后丢失响应等模糊结果可能触发换域名或外层重试。未收到成功响应不等于没有提交成功，不应据此反复补签。
-- **待验收方案**：[Draft PR #38](https://github.com/lankerr/2026-glados-checkin/pull/38) 拟加入会话隔离、身份核对、模糊结果停止重试和并发防护；**尚未合并 main、未部署到现有本地调度、未完成真实浏览器/真实签到验收**。离线测试通过不代表线上已解决。
-- **本地使用边界**：不能保证“无需重新配置”；Cookie、UA、浏览器和运行环境需分别核对。验证仍由官网组件决定是否放行，不能保证成功。存在上述风险时，优先使用官网手动签到，不要为验证脚本而反复提交。
-- **付费边界**：已有自述付费账号仍遇到低分或验证失败的反馈；付款不保证固定积分或免除 Turnstile，但不能外推为所有付费账号均无效。请勿仅为排查而购买套餐（见 [#37](https://github.com/lankerr/2026-glados-checkin/issues/37)）。
-
-**积分口径**：通知将"接口声称加分"与"积分流水观察"分开显示、不强行关联归属——同日同额不能证明是本次入账，历史流水也不代表本次奖励（相关讨论见 [#28](https://github.com/lankerr/2026-glados-checkin/issues/28)、[#37](https://github.com/lankerr/2026-glados-checkin/issues/37)）。
-
-**隐私**：任何反馈都不要公开 Cookie、Token、密码、验证码、nonce/proof、完整请求头、HAR 或含邮箱/账号信息的截图。
-
----
-
-> [!IMPORTANT]
-> **历史恢复记录（2026-09-30）**：新版认证修复见 [v2026.9.30 发布说明](https://github.com/lankerr/2026-glados-checkin/releases/tag/v2026.9.30)。Fork 用户请先 **Sync fork → Update branch**；同步代码不会更新你的 Secrets，请手动跑一次验证配置。后续公告可 **Watch → Custom → Releases** 订阅。
-
 <div align="center">
 
-**无需编写代码 · 无需自购服务器；当前验证限制见上方公告**
+# GLaDOS Check-in
 
-**配置后每天 9:30 自动尝试签到；不保证通过服务端验证**
+**本地签到，云端核对。让积分变化有据可查。**
 
----
+非官方 GLaDOS 社区工具 · Python / GitHub Actions / 可选消息推送
 
-### ✨ 为什么选择本项目？
+[![Workflow](https://github.com/lankerr/2026-glados-checkin/actions/workflows/checkin.yml/badge.svg)](https://github.com/lankerr/2026-glados-checkin/actions/workflows/checkin.yml)
+[![Stars](https://img.shields.io/github/stars/lankerr/2026-glados-checkin?style=flat&color=d9a441)](https://github.com/lankerr/2026-glados-checkin/stargazers)
+[![Forks](https://img.shields.io/github/forks/lankerr/2026-glados-checkin?style=flat&color=6a9caa)](https://github.com/lankerr/2026-glados-checkin/forks)
 
-| 优势                  | 说明                                                |
-| --------------------- | --------------------------------------------------- |
-| ⚠️ **当前状态** | 单账号单次本地测试记录；Actions 浏览器兜底默认关闭；安全收紧方案待验收 |
-| ✅ **结果可信**       | 正确区分签到完成、重复签到和真实失败                |
-| ✅ **新手友好**       | 全程图解，不会也能照着做                            |
-| ✅ **作者持续维护**   | 遇到问题提Issue，作者很乐意帮忙                     |
-
----
-
-### 📱 签到成功预览
-
-![签到成功示例](images/success.jpg)
-
-> **签到积分可累积兑换会员时长。每日奖励会随套餐、连续签到和海缆状态变化，请以控制台实际到账为准。**
-
----
-
-### 🚀 3 步完成自动签到
-
-```text
-┌─────────────────────────────────────────────────────────────┐
-│                                                             │
-│   ① Fork 项目    ──→  点一下右上角 Fork 按钮                 │
-│                                                             │
-│   ② 配置 Cookie  ──→  浏览器复制一下，贴到 GitHub Secrets    │
-│                                                             │
-│   ③ 启用 Actions  ──→  手动测试一次，之后每天自动运行         │
-│                                                             │
-│   ✅ 完成！每天自动签到 + 微信通知                            │
-│                                                             │
-└─────────────────────────────────────────────────────────────┘
-```
-
-**[👉 点击开始配置](#-快速部署)**
-
----
-
-[![Auto Checkin](https://github.com/lankerr/2026-glados-checkin/actions/workflows/checkin.yml/badge.svg)](https://github.com/lankerr/2026-glados-checkin/actions)
-[![GitHub Stars](https://img.shields.io/github/stars/lankerr/2026-glados-checkin?style=social)](https://github.com/lankerr/2026-glados-checkin)
-
-**⭐ 觉得有用？点个 Star 支持一下！**
+[快速开始](#quick-start) · [使用手册](docs/usage.md) · [运行边界](#status) · [常见问题](#faq) · [项目趋势](#history)
 
 </div>
 
 ---
 
-## 使用说明与免责声明
+## 不止看绿灯，更要看结果
 
-本项目为非官方社区辅助工具。使用前请阅读以下说明，并确认自己的部署方式符合所用平台的要求。
-
-- **账号与平台规则**：仅用于本人或已获明确授权的账号，遵守适用法律法规以及 GLaDOS、GitHub 和所选推送服务的服务条款。请自行确认平台是否允许相应的自动化使用方式。
-- **运行与奖励限制**：接口、验证流程、积分规则、服务额度和访问策略可能发生变化。测试通过或维护者账号运行成功，不构成持续可用、固定积分、补发差额、兑换成功或账号权益不受影响的保证；签到和奖励以平台实际记录为准。
-- **凭据与通知隐私**：请妥善保管 Cookie、Token、SendKey 等凭据，GitHub 部署时使用 Secrets，不要提交到代码、公开日志或 Issue。通知触发时，签到摘要可能包含邮箱、积分和剩余天数，并会发送给你配置的推送服务；配置前请了解该服务的数据处理规则。
-- **风险与责任范围**：本项目按“现状”提供。在适用法律允许的范围内，维护者和贡献者不对使用本项目产生的服务中断、数据或凭据泄露、积分及账号权益损失等承担赔偿责任。本说明不排除依法不得免除的责任。
-
-## 💡 重要说明
-
-> 默认只使用仓库内置的 **GitHub Actions** 定时任务，无需创建外部 cron。
->
-> 本项目每月自动提交一次保活时间戳，避免公开仓库因 60 天无活动而停用计划任务。
->
-> `cron-job.org` 仅作为可选备用方案。**内置 schedule 与外部 cron 二选一**，同时启用会重复签到和重复通知。
->
-> 已经 Fork 很久的用户需要先点击 **Sync fork → Update branch**，再重新启用 Actions。
-
----
-
-## 🔥 为什么你需要这个？
-
-> > **⚠️ 重要：如果你使用其他签到脚本失败，显示 "please checkin via [https://glados.cloud](https://glados.cloud)"，请使用本项目！**
-
-GLaDOS 在 2026 年初进行了 API 更新，**绝大多数旧签到脚本已失效**。我们通过抓包分析发现了问题：
-
-| 问题       | 旧脚本                  | 本项目（已修复）           |
-| ---------- | ----------------------- | -------------------------- |
-| 签到 Token | `glados.one` ❌         | `glados.cloud` ✅          |
-| 域名支持   | rocks/network ❌        | cloud ✅                   |
-| 签到结果   | "please checkin via..." | "Checkin!" 或 "Repeats" ✅ |
-
-<details>
-<summary><b>🔬 技术细节：我们是怎样修复问题的（感兴趣的看）</b></summary>
-
-### 🔬 我们的探索过程
-
-#### 问题现象
-
-- GitHub Actions 可以正常运行
-- 推送消息显示 "成功0/1"
-- 签到结果始终为 "please checkin via https://glados.cloud"
-- 手动点击签到按钮正常，但机器人签到无效
-
-#### 排查步骤
-
-1️⃣ **浏览器抓包分析**
-
-- 使用 Chrome DevTools 抓取真实签到请求
-- 对比浏览器请求和 Python 脚本请求的差异
-
-2️⃣ **尝试的方案（失败）**
-
-- ❌ 添加更多 Headers（sec-ch-ua、sec-fetch-\* 等）
-- ❌ 使用 requests.Session 保持会话
-- ❌ 使用 curl_cffi 模拟浏览器 TLS 指纹
-- ❌ 添加代理配置
-
-3️⃣ **最终发现**
-通过对比不同 token 值的请求结果：
-
-```python
-# 失败 ❌
-{'token': 'glados.one'}  → "please checkin via https://glados.cloud"
-
-# 成功 ✅
-{'token': 'glados.cloud'} → "Checkin Repeats! Please Try Tomorrow"
-```
-
-**问题根源**：GLaDOS 更新了 API，签到 token 必须从 `glados.one` 改为 `glados.cloud`！
-
-</details>
-
----
-
-> **📢 重要提示**
->
-> - GLaDOS 官网已迁移至 **glados.cloud**（不再是 glados.rocks）
-> - 本项目专为 2026 积分制度优化，每天自动签到一次
-> - 完全免费，使用 GitHub Actions，无需自己的服务器
-> - 不会的话可以提 Issue，作者很乐意帮助技术新手！
-
----
-
-## ✨ 功能特点
-
-| 功能            | 说明                            |
-| --------------- | ------------------------------- |
-| 🎯 **精准积分** | 获取真实积分数据 + 每日变化量   |
-| 🎁 **兑换提示** | 显示当前可兑换选项及差额        |
-| ⏰ **每日一次** | 北京时间 9:30 自动签到          |
-| 🔄 **失败重试** | 最多尝试三次，最终失败才报警    |
-| 📱 **微信推送** | PushPlus HTML 报告 / Server酱 Markdown 报告 |
-| ☁️ **2026 API** | 适配最新 glados.cloud API       |
-| 🔧 **持续维护** | 发现问题及时修复                |
-
----
-
-## 🛠 配置参数 (环境变量)
-
-本项目支持以下环境变量配置：
-
-| 变量名               | 必填  | 说明                                                                       |
-| -------------------- | ----- | -------------------------------------------------------------------------- |
-| `GLADOS_COOKIE`      | ✅ 是 | GLaDOS 的完整 Cookie，必须包含 `gld:sess` 与 `gld:sess.sig`。多个账号请用 `&` 或换行符分隔。 |
-| `GLADOS_USER_AGENT`  | ❌ 否 | 生成当前 `gld:sess` 时浏览器的完整 User-Agent；新版设备校验失败时需要配置。 |
-| `PUSHPLUS_TOKEN`     | ❌ 否 | PushPlus 微信推送 Token。                                                  |
-| `SERVERCHAN_SENDKEY` | ❌ 否 | Server酱 SendKey，支持 Turbo（`SCT...`）与 Server酱³（`sctp...`）。         |
-| `TELEGRAM_BOT_TOKEN` | ❌ 否 | Telegram 机器人的 Token（例如 `123456:ABC-DEF1234...`）                    |
-| `TELEGRAM_CHAT_ID`   | ❌ 否 | 接收推送的 Telegram Chat ID                                                |
-| `PUSH_LEVEL`         | ❌ 否 | 推送级别：`fail_only`（默认，仅失败推送）或 `all`（每次均推送）            |
-| `EXCHANGE_PLAN`      | ❌ 否 | 积分自动兑换计划（#11）：`plan500`（默认，500 分自动兑换 100 天）、`plan200`（200 分→30 天）、`plan100`（100 分→10 天）或 `off`（关闭）。兑换结果即使 `PUSH_LEVEL=fail_only` 也会推送。 |
-| `GLADOS_BROWSER_CHECKIN` | ❌ 否 | Turnstile 真浏览器兜底开关：默认开启；`0` 关闭。检测到 `GITHUB_ACTIONS` 时默认自动禁用，设 `1` 可显式尝试（尚未验证 Actions 首次签到恢复）。 |
-| `GLADOS_BROWSER_HEADLESS` | ❌ 否 | 浏览器兜底改无头模式：默认 `0`（有头）；未验证不同环境的成功率。 |
-
-PushPlus、Server酱和 Telegram 均为可选，可单独使用，也可同时配置；多个渠道配置后会分别发送同一份多账号汇总，并遵循同一个 `PUSH_LEVEL` 设置。只读诊断（`diagnose_only`）不发送推送。
-
-### 🍪 2026 年 9 月新版会话 Cookie
-
-2026 年 9 月的新认证新增了 `gld:sess` 与 `gld:sess.sig`。旧的两项 `koa:sess`
-即使尚未过期，也可能只能维持网页兼容状态，调用新版 API 时会返回“没有权限”。请在
-Chrome 开发者工具的 **Network** 中选中一次成功的 `/api/user/status` 请求，从
-**Request Headers → Cookie** 复制完整值，并确认其中同时存在 `gld:sess` 和
-`gld:sess.sig`。`__stripe_mid` 属于支付组件 Cookie，不是签到认证的必要字段，保留也
-不会影响请求。请勿在 Issue、日志或聊天中公开任何 Cookie 内容。
-
-新版签到还会校验登录设备。若日志显示 `device-mismatch` 或 “Automated check-in
-detected”，请打开同一个浏览器的 `chrome://version`，复制“用户代理”完整内容，并在
-仓库 **Settings → Secrets and variables → Actions → Variables** 中设置
-`GLADOS_USER_AGENT`。浏览器升级后，应重新登录并同步更新 Cookie 与 User-Agent。
-
-更新后可以先运行只读检查：在 **Actions → GLaDOS 2026 Checkin → Run workflow** 中，
-`dispatch_source` 选 `manual`，勾选 `diagnose_only`。只读检查仅请求登录状态，日志不输出
-Cookie、邮箱或账号余额，也不会签到、兑换积分或发送推送。所有账号状态查询通过时工作流
-成功；查询失败时工作流失败。GitHub 自身仍可能发送工作流失败邮件。
-本地使用时设置 `CHECKIN_DIAGNOSTIC_ONLY=true` 后运行脚本即可。
-
-注意：只读查询成功不代表签到的设备校验也已通过。确认 Cookie 与 User-Agent 对应后，
-再取消勾选 `diagnose_only` 执行一次实际签到；若不希望自动兑换，可先将仓库变量
-`EXCHANGE_PLAN` 设为 `off`。
-
-完整 Cookie 与 User-Agent 都已配置但仍失败时，请先核对以下信息：
-
-- 普通签到和只读诊断都会显示 `浏览器 User-Agent: 已配置` 或 `未配置，使用默认值`，
-  不输出具体值。Actions 优先读取 **Variables** 中的 `GLADOS_USER_AGENT`；Variable
-  未设置或为空时，兼容读取同名 **Secret**。两处都配置时以 Variable 为准，更新时请注意
-  不要留下旧的 Variable。只含空格的 Variable 也会优先于 Secret，随后使用默认值；
-  请清空或删除它。两处都为空时仍使用默认值。同步工作流后此兼容才会生效。
-- 推荐只粘贴完整单行 User-Agent 的值，不要附带说明文字。脚本可自动去掉一对完整的
-  英文外层双引号及误复制的 `User-Agent:` 前缀；包含空格的完整浏览器值也兼容一对
-  英文外层单引号。自定义单个产品标识中的合法单引号会保留，只记录已规范化，不打印内容。
-  含内嵌换行、无效控制字符、不支持的字符、重复引号或不成对双引号时，会在任何账号请求、
-  签到、兑换和推送前报配置错误并停止，请重新复制对应浏览器的值。
-  显示“已配置”只证明配置已传入并通过本地格式检查，不证明它与当前登录会话匹配。
-- 提供失败运行的链接（或 commit SHA）、浏览器名称/版本、GitHub Actions 或本地运行、
-  是否多账号，以及 `diagnose_only` 是否通过。日志中的 `code`、已知 `reason` 和
-  `http_status` 可以帮助区分会话拒绝与网络错误。请勿公开 Cookie、Token、完整请求头或
-  含个人信息的响应体。
-- 签到返回设备/认证拒绝，或 HTTP 401/403 时，脚本会停止该账号的重试和后续积分查询、
-  兑换请求；HTTP 401/403 不会再换域名尝试。其他账号仍继续处理。
-- HTTP 5xx、请求超时或响应格式异常属于本次请求失败，不能据此认定 Cookie 失效或当天
-  未签到。重试耗尽后，脚本会跳过该账号的后续积分查询和兑换，仍发送失败通知并返回失败。
-  通知标题标明“本次运行失败”，未知的积分和天数显示“未获取”；请结合当天其他成功运行或
-  官网签到日历核对。日志和推送正文的时间统一使用北京时间（UTC+8）。
-
-`Automated check-in detected` 是服务端的拒绝结果，仅凭这句文案不能确定具体触发条件，
-也不能保证设置 User-Agent 后必然恢复。只读查询通过但实际签到仍被拒绝时，请保留脱敏
-结果并联系服务方确认会话或自动化使用策略，不要反复触发签到。
-
-### 签到只获得 1 积分（#28）
-
-2026-11-06 已核对官网控制台的新流程：签到前会获取一次性 challenge，等待后提交对应的
-nonce/proof。旧脚本仅提交 token，缺少这一步；请同步最新 `checkin.py`。新版本为每次尝试
-获取新验证，并在签发验证的同一域名提交；验证失败或过期时会停止本次提交并给出脱敏错误，
-不会静默退回旧流程。只读诊断仍只查询状态，不获取验证、不签到。
-
-服务端决定实际入账积分。接口返回 `Checkin! Got 1 Points` 且流水增加 1，说明已签到但
-本次奖励较低；不应把它当作网络失败反复补签。当天已经入账的积分不保证能补差，适配后的
-奖励数额需由下一次首次签到的服务端响应和积分流水验证。此项与 User-Agent 配置问题分别排查。
-
-### 🎁 积分自动兑换（#11）
-
-签到攒够积分后自动兑换会员天数，实现无感自动续期：
-
-- 每天签到后检查积分，达到阈值就自动调用 GLaDOS 兑换接口；
-- 默认 **500 分 → 100 天**（`plan500`），无需任何配置即可生效；
-- 想换别的档位或关闭，设置 `EXCHANGE_PLAN` 环境变量（GitHub 上可配在 **Settings → Secrets and variables → Actions → Variables**）；
-- 兑换成功或失败都会推送通知（积分不足时静默跳过，不打扰）。
-
----
-
-<details>
-<summary><b>📚 给小白的科普：什么是 Fork、Cookie、Secrets？（新手必看）</b></summary>
-
-> 💡 如果你已经熟悉这些概念，可以跳过这部分直接看 [快速部署](#-快速部署)
-
-<details>
-<summary><b>🍴 什么是 Fork？</b></summary>
-
-**Fork** = 把别人的项目复制一份到你自己的账号下。
-
-就像复印一份文档，原件还在别人那里，你有一份自己的副本可以随便改。Fork 之后这个项目就属于你了，你可以自己配置和使用。
-
-</details>
-
-<details>
-<summary><b>🍪 什么是 Cookie？</b></summary>
-
-**Cookie** = 网站记住你是谁的"通行证"。
-
-当你登录 GLaDOS 后，网站会给你的浏览器一个"通行证"（Cookie），下次访问时浏览器出示这个通行证，网站就知道你是谁了。
-
-我们需要把这个通行证告诉签到程序，这样程序就能"假装"是你去签到。
-
-</details>
-
-<details>
-<summary><b>🔐 什么是 Secrets？</b></summary>
-
-**Secrets** = 保险箱，用来存放敏感信息。
-
-你的 Cookie 和 Token 都是隐私信息，不能直接写在代码里（否则别人都能看到）。GitHub Secrets 就像一个保险箱，把这些敏感信息锁起来，只有你的程序运行时才能访问。
-
-</details>
-
-<details>
-<summary><b>⚙️ 什么是 GitHub Actions？</b></summary>
-
-**GitHub Actions** = 免费的自动化机器人。
-
-它可以按照你设定的时间表（比如每天 9:30）自动运行程序。你不需要自己的服务器，GitHub 会免费帮你跑代码。
-
-</details>
-
-<details>
-<summary><b>▶️ 什么是 Run workflow？</b></summary>
-
-**Run workflow** = 手动测试按钮。
-
-| 按钮             | 作用                                               |
-| ---------------- | -------------------------------------------------- |
-| **Run workflow** | 选择 `dispatch_source: manual` 后立即执行一次，用于测试配置是否正确 |
-| **定时任务**     | 每天 9:30 自动执行，不需要手动操作                 |
-
-简单说：点 Run workflow 是**测试**，以后会**自动运行**。
-
-</details>
-</details>
-
----
-
-## 🚀 快速部署
-
-### 第一步：Fork 本仓库
-
-点击页面右上角的 **Fork** 按钮，将项目复制到你的账号下。
-
----
-
-### 第二步：获取 Cookie 🍪
-
-> ⚠️ **注意**：GLaDOS 官网已迁移到 **[https://glados.cloud](https://glados.cloud)**，请使用新域名！
-
-#### 2.1 打开浏览器开发者工具
-
-推荐直接使用 Chrome/Edge 自带的开发者工具；也可以使用 Cookie-Editor：
-
-![Cookie-Editor 扩展](images/cookie-extension.png)
-
-> 💡 **提示**：无论使用哪种方式，都必须取得新版的 `gld:sess` 和 `gld:sess.sig`，
-> 不能再只复制旧的两项 `koa:sess`。
-
-![可选的 Cookie 扩展](images/cookie-alternative.png)
-
-#### 2.2 登录 GLaDOS 并获取 Cookie
-
-1. 打开 [https://glados.cloud](https://glados.cloud)，退出后重新登录；
-2. 进入 **签到页面**（Console → Checkin），按 `F12` 打开开发者工具；
-3. 选择 **Network**，刷新页面，点开一次成功的 `/api/user/status` 请求；
-4. 在 **Request Headers** 中找到 `Cookie`，右键复制它的完整值；
-5. 确认完整值中同时存在 `gld:sess=` 和 `gld:sess.sig=`。
-
-![获取 Cookie](images/glados-cookies.png)
-
-#### 2.3 Cookie 格式（重要！）
-
-直接使用上一步复制的完整值。它通常包含新旧两组会话 Cookie，例如：
-
-```text
-koa:sess=旧会话; koa:sess.sig=旧签名; gld:sess=新会话; gld:sess.sig=新签名
-```
-
-其他 Cookie 可以保留；`__stripe_mid` 与签到认证无关，但不会造成问题。
-
-也支持将 Cookie-Editor 导出的 JSON 数组整体保存到 `GLADOS_COOKIE`，可以保留缩进和
-换行；整个数组按一个账号处理。多账号请使用上面的 Cookie 请求头格式，每个账号占一行。
-
-**常见错误**：
-
-- ❌ 仍然只复制 `koa:sess` 与 `koa:sess.sig`
-- ❌ 漏掉 `gld:sess.sig`
-- ❌ 把 `Cookie:` 之外的整段请求头一起复制
-- ❌ 值两边多了引号
-- ❌ 将 Cookie 发布到 Issue、日志或聊天中
-
-#### 2.4 验证你的 Cookie 格式
-
-运行以下 Python 代码验证格式是否正确：
-
-```python
-# 将你的 Cookie 粘贴到下面的引号中
-cookie = "gld:sess=你的新会话; gld:sess.sig=你的新签名"
-
-# 验证
-if "gld:sess=" in cookie and "gld:sess.sig=" in cookie:
-    print("✅ 已包含新版会话 Cookie！")
-else:
-    print("❌ Cookie 缺少 gld:sess 或 gld:sess.sig")
-```
-
----
-
-### 第三步：配置 GitHub Secrets 🔐
-
-1. 进入你 Fork 的仓库
-2. 点击 **Settings**（设置）
-3. 左侧菜单找到 **Secrets and variables** → **Actions**
-4. 点击右上角 **New repository secret**
-
-![添加 Secret](images/add-secret.png)
-
-按需添加以下 Secret：
-
-| Name             | Value                    | 必需  |
-| ---------------- | ------------------------ | ----- |
-| `GLADOS_COOKIE`  | 第二步组合的 Cookie      | ✅ 是 |
-| `PUSHPLUS_TOKEN` | 微信推送 Token（见下方） | ❌ 否 |
-| `SERVERCHAN_SENDKEY` | Server酱 SendKey（见下方） | ❌ 否 |
-
----
-
-### 第四步：配置微信推送（可选）📱
-
-如果你希望收到**微信通知**，可选择 Server酱或 PushPlus，也可同时配置。
-
-#### Server酱
-
-1. 需要微信通知时，访问 [Server酱 Turbo](https://sct.ftqq.com/)，登录并绑定微信接收渠道。本项目也兼容 [Server酱³](https://sc3.ft07.com/) 的独立 App 推送，接收方式见[官方通道说明](https://sct.ftqq.com/docs/getting-started/channels/)。
-2. 复制自己的 **SendKey**，Turbo 通常以 `SCT` 开头，Server酱³ 以 `sctp` 开头。
-3. 回到仓库 **Settings** → **Secrets and variables** → **Actions** → **New repository secret**，Name 填 `SERVERCHAN_SENDKEY`，Secret 填完整 SendKey，然后保存。
-
-只使用 Server酱时，无需配置 `PUSHPLUS_TOKEN`。推送包含账号、积分、剩余天数、签到结果和兑换信息，正文会转换为 Markdown。
-
-默认 `PUSH_LEVEL=fail_only`，仅在签到失败或发生兑换时推送。若希望每次签到成功也收到通知，请在 **Settings** → **Secrets and variables** → **Actions** → **Variables** → **New repository variable** 中添加 `PUSH_LEVEL`，值设为 `all`。这里的 `PUSH_LEVEL` 应配置为 **Variable**。
-
-#### PushPlus
-
-1. 访问 [https://www.pushplus.plus](https://www.pushplus.plus)
-2. 点击右上角 **登录**，使用微信扫码登录
-
-![PushPlus 扫码登录](images/pushplus-checkin.png)
-
-3. 登录后点击 **发送消息** → **一对一消息**
-4. 复制页面上显示的 **Token**（类似 `05c3****dd36` 的字符串）
-
-![获取 Token](images/pushplus-token.png)
-
-5. 将 Token 添加到 GitHub Secrets，Name 填 `PUSHPLUS_TOKEN`
-
----
-
-### 第五步：启用 Actions ⚡
-
-1. 进入你 Fork 仓库的 **Actions** 标签页
-2. 如果看到黄色提示，点击 **I understand my workflows, go ahead and enable them**
-3. 点击左侧的 **GLaDOS 2026 Checkin**
-4. 点击右侧 **Run workflow**，选择 `dispatch_source: manual` 后手动测试一次
-
-![启用 Actions](images/workflow.png)
-
-> [!IMPORTANT]
->
-> 完成首次手动测试后，内置 schedule 会每天运行。请勿再配置相同时间的外部 cron，否则会重复执行。
->
-> 当前 `dispatch_source` 为可选输入，省略时默认 `external`；建议外部任务显式填写，便于辨认来源。仅发送 `{"ref":"main"}` 也可触发当前工作流，不能用它阻止旧定时器；请在 cron-job.org 停用不再需要的任务。
-
----
-
-## ⭐ 可选备用：cron-job.org
-
-只有在你的网络环境或 GitHub 计划任务长期不触发时才需要外部 cron。使用它时，请删除或注释 `.github/workflows/checkin.yml` 中的 `schedule`，确保只保留一个调度器。
-
-### 配置步骤
-
-#### 第一步：获取 GitHub Personal Access Token
-
-1. 访问 [https://github.com/settings/tokens](https://github.com/settings/tokens)
-2. 推荐点击 **Generate new token** → **Fine-grained personal access token**
-3. Repository access 只选择你自己的 `2026-glados-checkin` Fork
-4. Repository permissions → **Actions: Read and write**
-5. 生成后立即复制；不要把 Token 发到 Issue、截图或写入仓库
-
-> 使用 classic PAT 时，此接口需要 `repo` scope；`workflow` scope 主要用于修改 workflow 文件，并不是调用 dispatch 接口的替代权限。优先使用权限更小的 fine-grained PAT。
-
-#### 第二步：注册 cron-job.org
-
-1. 访问 [https://cron-job.org](https://cron-job.org) 注册账号（免费）
-2. 注册后登录，点击 **Create Cronjob** 创建任务
-
-#### 第三步：创建签到任务（9:30）
-
-![创建 Cron 任务](images/create_corn_job.png)
-
-按照以下配置填写：
-
-**基本信息**：
-
-| 选项      | 填写                                                                                                   |
-| --------- | ------------------------------------------------------------------------------------------------------ |
-| **Title** | `GLaDOS 早签到`                                                                                        |
-| **URL**   | `https://api.github.com/repos/你的用户名/2026-glados-checkin/actions/workflows/checkin.yml/dispatches` |
-
-> ⚠️ **重要**：把 `你的用户名` 改成你的 GitHub 用户名！比如 `lankerr`
-
-**执行时间**：选择每天 **09:30**（Asia/Shanghai 时区）
-
-**高级配置**（点击 Advanced 展开）：
-
-![高级配置](images/cron_advanced.png)
-
-| 选项               | 值            |
-| ------------------ | ------------- |
-| **Request method** | POST          |
-| **Time zone**      | Asia/Shanghai |
-
-**请求头（Headers）**：点击 "+ 添加" 添加三行：
-
-| Key             | Value                            |
-| --------------- | -------------------------------- |
-| `Accept`        | `application/vnd.github+json`     |
-| `Authorization` | `Bearer 你复制的GitHub_Token`     |
-| `Content-Type`  | `application/json`               |
-
-> Authorization 示例只应写成占位形式：`Bearer github_pat_xxx`。不要公开真实 Token。
-
-**请求体（Request body）**：选择 Raw Body，填入：
-
-```json
-{ "ref": "main", "inputs": { "dispatch_source": "external" } }
-```
-
-![常用配置预览](images/cron_common.png)
-
-配置完成后点击 **Save** 保存。
-
-#### 第四步：测试验证
-
-1. 在任务列表点击 **Test run** 测试
-2. 当前 GitHub API 成功时会返回 **200**；旧 API 版本可能返回 **204**，两者都代表 dispatch 已接受 ✅
-
-![测试成功](images/cron_success.png)
-
-3. 到 GitHub 仓库的 **Actions** 页面查看，应该有新的运行记录
-
----
-
-### 🚨 常见陷阱与错误
-
-| 错误                         | 现象         | 原因                   | 解决方法                                       |
-| ---------------------------- | ------------ | ---------------------- | ---------------------------------------------- |
-| **401 Unauthorized**         | 认证失败     | Authorization 格式错误 | 使用 `Bearer github_pat_xxx`                    |
-| **422 Unprocessable Entity** | 请求无法处理 | ref 缺失/不存在或输入参数不合法 | 按上面的完整 Request body 填写                 |
-| **404 Not Found**            | 找不到工作流 | Actions 未启用或文件不存在 | 先完成 Fork、启用 Actions 并手动运行一次      |
-| Accept 被截断                | 配置错误     | 输入框显示不全         | 完整值：`application/vnd.github.v3+json`       |
-| Token 有空格                 | 认证失败     | Token 被意外截断       | Token 是连续字符串，中间不能有空格             |
-| 权限不足                     | 403 错误     | Token 无 Actions 写权限 | fine-grained PAT 设置 Actions: Read and write  |
-
-> 💡 **小贴士**：遇到 401/422 错误时，先检查上面三行 Headers 是否完全正确！
-
-**🎉 完成！** 外部 cron 会每天 9:30 触发一次。记得关闭内置 schedule，避免重复运行。
-
----
-
-## 💻 本地/独立服务器部署教程
-
-如果你有自己的长期运行的电脑（如树莓派、软路由、VPS 等），也可以非常简单地在本地运行：
-
-### 第一步：安装依赖
-
-首先确保你已经安装了 Python 3，然后安装依赖库：
-
-```bash
-git clone https://github.com/你的用户名/2026-glados-checkin.git
-cd 2026-glados-checkin
-pip install -r requirements.txt
-```
-
-### 第二步：配置并运行
-
-使用环境变量传递 Cookie 并直接运行 Python 脚本：
-
-```bash
-# 配置 Cookie
-export GLADOS_COOKIE="gld:sess=xxxxxx; gld:sess.sig=yyyyyy"
-
-# 可选：配置推送
-export PUSH_LEVEL="all"
-export SERVERCHAN_SENDKEY="SCT..."
-export TELEGRAM_BOT_TOKEN="xxx"
-export TELEGRAM_CHAT_ID="yyy"
-
-# 执行签到
-python3 checkin.py
-```
-
-### 第三步：设置定时任务 (Cron)
-
-通过 `crontab -e` 配置每天自动执行（例如每天早上 9:30）：
-
-```bash
-30 9 * * * export GLADOS_COOKIE="gld:sess=xxx; gld:sess.sig=yyy"; cd /path/to/2026-glados-checkin && python3 checkin.py >> glados.log 2>&1
-```
-
----
-
-## ❄️ NixOS 服务配置
-
-本项目提供了标准的 Nix Flake，你可以直接作为 inputs 引入，系统会自动管理 Python 环境和依赖包。
-
-### 使用方法 (Flakes)
-
-在你的 [`flake.nix`](flake.nix) 中引入本项目：
-
-```nix
-{
-  inputs = {
-    nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
-    glados-checkin.url = "github:lankerr/2026-glados-checkin"; # 若本地测试可改写为 path:/绝对路径
-  };
-
-  outputs = { self, nixpkgs, glados-checkin, ... }: {
-    nixosConfigurations.my-server = nixpkgs.lib.nixosSystem {
-      system = "x86_64-linux";
-      modules = [
-        # 引入 glados-checkin 的 NixOS 模块
-        glados-checkin.nixosModules.default
-
-        ({ config, pkgs, ... }: {
-          # 配置服务
-          services.glados-checkin = {
-            enable = true;
-            cookie = "gld:sess=xxx; gld:sess.sig=yyy";
-
-            # 【可选】消息推送配置
-            pushLevel = "all"; # 或 "fail_only"
-            pushplusToken = "xxx";
-            serverchanSendkey = "SCT...";
-            telegramBotToken = "yyy";
-            telegramChatId = "zzz";
-          };
-        })
-      ];
-    };
-  };
-}
-```
-
-部署配置后执行 `sudo nixos-rebuild switch --flake .#my-server`，签到任务即会自动注册为 systemd timers。
-
----
-
-## 📊 推送效果预览
-
-签到成功后，你会在微信收到类似这样的推送：
-
-```text
-👤 your@email.com
-
-当前积分: 46 (+20)
-剩余天数: 353 天
-签到结果: Bindweed! Bindweed!
-
-🎁 兑换选项:
-❌ 100分→10天 (差54分)
-❌ 200分→30天 (差154分)
-❌ 500分→100天 (差454分)
-```
-
----
-
-## ⏰ 自动运行时间
-
-| 时间（北京时间） | 说明     |
-| ---------------- | -------- |
-| **09:30**        | 早间签到 |
-
-> 默认使用 GitHub Actions；脚本内部最多尝试三次。外部 cron 是备用方案，不应与内置 schedule 同时启用。
-
----
-
-## ❓ 常见问题
-
-<details>
-<summary><b>Q: GitHub Actions 会不会在两个月后停止？</b></summary>
-
-GitHub 官方规则是：公开仓库连续 **60 天没有仓库活动**时，计划任务会自动停用。计划任务还可能因高负载延迟，尤其是在整点附近。
-
-本项目的 `.github/workflows/keep-alive.yml` 每月更新一次 `.github/last-active.txt`，早于 60 天期限。若你是旧 Fork：
-
-1. 点击 **Sync fork → Update branch**。
-2. 打开 Actions，选择两个 workflow，确认状态为 Enabled。
-3. 手动运行一次 `GLaDOS 2026 Checkin` 验证 Cookie。
-
-[GitHub 官方 schedule 说明](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#schedule)
-
-</details>
-
-<details>
-<summary><b>Q: cron-job.org 测试返回 401/404/422 错误怎么办？</b></summary>
-
-请对照以下检查：
-
-**401 Unauthorized（认证失败）**：
-
-```text
-❌ Authorization: github_pat_xxx
-✅ Authorization: Bearer github_pat_xxx
-```
-
-注意：`Bearer ` 前缀后面必须有一个**空格**。
-
-**404 Not Found**：先完成 Fork，在 GitHub Actions 页面启用工作流并手动运行一次；同时确认 URL 中的用户名和仓库名正确。
-
-**422 Unprocessable Entity（请求无法处理）**：
-
-外部定时器建议使用：
-
-```json
-{"ref":"main","inputs":{"dispatch_source":"external"}}
-```
-
-当前 `dispatch_source` 可省略，默认 `external`，因此 `{"ref":"main"}` 本身不是错误。遇到 422，请检查是否提供 `ref`、对应分支是否存在，以及 `inputs` 名称和取值是否与工作流一致。旧定时器需要在调度服务中停用，不能依赖省略此输入来阻止执行。
-
-**其他检查**：
-
-- Accept 头是否完整：`application/vnd.github+json`
-- Fine-grained PAT 是否有目标仓库的 `Actions: Read and write` 权限
-- Token 是否过期（检查 Expiration 设置）
-
-[🔝 查看完整陷阱列表](#-常见陷阱与错误)
-
-</details>
-
-<details>
-<summary><b>Q: 显示 "please checkin via https://glados.cloud" 怎么办？</b></summary>
-
-这表示你使用的签到脚本已过期！GLaDOS 在 2026 年更新了 API，旧脚本的 token 值 `glados.one` 已失效。
-
-**解决方案**：使用本项目，我们已经修复了这个问题（token 改为 `glados.cloud`）。
-
-</details>
-
-<details>
-<summary><b>Q: 显示 "Checkin Repeats! Please Try Tomorrow" 是什么意思？</b></summary>
-
-这表示服务端认为**今天已经签到过**。它可能出现在网页手动签到之后；不能单凭此响应证明脚本完成了当日首次签到或新增积分，请核对积分流水。
-
-</details>
-
-<details>
-<summary><b>Q: Cookie 多久过期？</b></summary>
-
-没有固定保证。退出登录、修改密码、服务端会话策略变化都可能让 Cookie 提前失效。Actions 真正失败并提示登录/认证问题时，重新获取 Cookie 并更新 `GLADOS_COOKIE` 即可。
-
-</details>
-
-<details>
-<summary><b>Q: 支持多个账号吗？</b></summary>
-
-支持！用英文符号 `&` 分隔多个 Cookie：
-
-```text
-cookie1&cookie2&cookie3
-```
-
-</details>
-
-<details>
-<summary><b>Q: 没有收到微信推送怎么办？</b></summary>
-
-1. 检查所选渠道的 Secret 是否配置正确：Server酱使用 `SERVERCHAN_SENDKEY`，PushPlus 使用 `PUSHPLUS_TOKEN`。
-2. 在相应服务的网站测试发送功能，并确认已绑定接收渠道。
-3. 默认 `PUSH_LEVEL=fail_only`，所有账号签到成功且没有兑换事件时不推送。需要每次推送时，在 Actions 的 **Variables** 中设置 `PUSH_LEVEL=all`。
-4. 确认手动运行时没有勾选 `diagnose_only`，并查看 Actions 日志中的推送结果。
-
-PushPlus 完全可选，不影响签到。[PushPlus 官方说明](https://www.pushplus.plus/doc/function/verify.html)要求发送消息的账号完成实名认证，未实名通常返回 `905`；认证费用以其当时页面为准，不是本项目收取的费用。
-
-不使用该服务时，可以不配置或删除 `PUSHPLUS_TOKEN`；签到仍会执行，也可以配置 `SERVERCHAN_SENDKEY` 使用 Server酱，或配置 `TELEGRAM_BOT_TOKEN` 和 `TELEGRAM_CHAT_ID` 使用 Telegram 推送。
-
-</details>
-
-<details>
-<summary><b>Q: 为什么一天运行多次、收到多条通知？</b></summary>
-
-通常是同时启用了 GitHub 内置 schedule 和 cron-job.org。请二选一；本项目默认只需内置 schedule。新版默认 `PUSH_LEVEL=fail_only`，正常完成时不会反复推送。
-
-</details>
-
-<details>
-<summary><b>Q: 积分、兑换天数和流量怎么算？</b></summary>
-
-签到积分、会员剩余天数和流量额度是不同的量。本项目从 GLaDOS API 读取积分、剩余天数与兑换选项；脚本不会为账号分配或重置流量，也不能用固定的“积分 → GB”比例计算流量。
-
-自动兑换使用本仓库预设的 `EXCHANGE_PLAN`（默认 `plan500`，按 500 分→100 天配置）向服务端提交兑换请求；实际可选档位、到账天数、套餐流量和重置规则，均以自己账号的 [GLaDOS 控制台](https://glados.cloud/console) 为准。若不希望自动兑换，设置仓库 Variable `EXCHANGE_PLAN=off`。不要把某次显示的“500 分→90 天”或其他档位当作长期不变的承诺。
-
-</details>
-
-<details>
-<summary><b>Q: Actions 运行失败怎么办？</b></summary>
-
-1. 点击失败的运行记录查看详细日志
-2. 检查 Cookie 格式是否正确
-3. 如果还是不行，欢迎提 Issue！
-
-</details>
-
----
-
-## ⚠️ 运行机制与限制
-
-GitHub 的 schedule 不是实时调度器：高负载时可能延迟，极端情况下可能丢弃排队任务；公开仓库连续 60 天无活动会自动停用 schedule。为降低风险，本项目采用非整点运行、脚本内三次重试和每月一次保活提交。
-
-这仍不能保证第三方服务 100% 可用：GLaDOS 宕机、Cookie 失效、GitHub 故障或用户自行关闭 Actions 时，签到会失败。新版会让真正失败返回非零退出码，以便 Actions 邮件和可选通知准确报警。
-
----
-
-## 📂 项目文件
-
-| 文件                                                                         | 说明                |
-| ---------------------------------------------------------------------------- | ------------------- |
-| [`checkin.py`](checkin.py)                                                     | 核心签到脚本        |
-| `.github/workflows/checkin.yml`                                              | GitHub Actions 配置 |
-| [`requirements.txt`](requirements.txt)                                        | Python 依赖         |
-| `tests/`                                                                       | 结果判断与重试测试  |
-| `images/`                                                                    | 教程截图            |
-
----
-
-## 🤝 需要帮助？
-
-- 📝 **提 Issue**：遇到问题请提 Issue，作者很乐意帮助技术新手！
-- ⭐ **Star**：如果对你有帮助，请点个 Star 支持一下
-- 🍴 **Fork**：欢迎 Fork 并贡献代码
-
----
-
-## 🙏 致谢
-
-感谢通过 Pull Request 改进本项目的贡献者。每一项修复和文档改进都让自动签到更可靠，也让新用户更容易完成配置。
-
-| 贡献者 | 贡献 | Pull Request |
+| 本地执行，云端核对 | 签到结果与流水分开看 | 通知与排障留有依据 |
 | --- | --- | --- |
-| [@Ch3nSir](https://github.com/Ch3nSir) | 添加 Server酱 Turbo / Server酱³ 推送支持，补充部署说明、NixOS 配置和通知回归测试。 | [#27](https://github.com/lankerr/2026-glados-checkin/pull/27) |
-| [@badpinkman](https://github.com/badpinkman) | 适配新版 `gld:sess` 会话与浏览器设备校验，完善 Cookie 获取、User-Agent 配置和认证失败提示，并提供真实运行验证。 | [#18](https://github.com/lankerr/2026-glados-checkin/pull/18) |
-| [@Unexpectedlyc](https://github.com/Unexpectedlyc) | 调整 README 的部署顺序与说明，减少 GitHub Actions 和外部定时器配置带来的误解。 | [#5](https://github.com/lankerr/2026-glados-checkin/pull/5) |
-| [@Initsnow](https://github.com/Initsnow) | 添加 Telegram 推送、通知级别与 NixOS Flake 支持，并修复 Telegram 消息格式问题。 | [#3](https://github.com/lankerr/2026-glados-checkin/pull/3) |
+| 本地尝试签到；云端默认只读核对状态，不把查询当作签到。 | 同时展示接口结果、余额与已读流水，不把历史奖励算作本次成功。 | 可选微信 / Telegram 通知，保留脱敏错误与明确的运行边界。 |
 
-同时感谢 [@LxFairy](https://github.com/LxFairy) 提交上游同步与冲突处理 PR（[#8](https://github.com/lankerr/2026-glados-checkin/pull/8)、[#9](https://github.com/lankerr/2026-glados-checkin/pull/9)，未合并），以及在 Issues 中提供报错日志、排查线索和复测反馈的用户。
+**已有连续实测记录：** 维护者单一账号在 2026-11-14 / 15 / 16 分别观察到 **+10 / +19 / +12** 入账。[查看观察范围与来源](docs/status-notes.md)
 
-感谢 [@chengchang1987-cloud](https://github.com/chengchang1987-cloud) 在 [Issue #28](https://github.com/lankerr/2026-glados-checkin/issues/28) 提供积分流水、challenge 排查证据和[参考脚本](https://github.com/lankerr/2026-glados-checkin/issues/28#issuecomment-6676702004)。参考脚本的核心 proof 算法与已合并的 #31 一致；本次进一步采纳日志即时刷新（`flush=True`）及 2.7 秒等待时间（在 2.5 秒基础上增加 0.2 秒余量）。原有的 nonce/TTL 校验、同域提交、失败时不回退旧签到流程、User-Agent 兼容和推送行为均保留。这两项改进不代表首次签到奖励已恢复，仍需以下一次首次签到返回及实际积分入账核验。
+<!--STREAK:START-->
+> 🔥 **连续自动入账 3 天**（最近 2026-11-16，+12 分）——每日云端只读核对自动更新，官网流水可查
+<!--STREAK:END-->
 
-特别感谢 @badpinkman 对 2026 年 9 月认证故障的排查与修复，帮助本项目恢复正常签到。
+<sub>这是单账号、单环境观察，不保证其他账号或每天成功。实际奖励以官网记录为准。</sub>
 
----
+<a id="history"></a>
+## 项目趋势
 
-## 📝 更新日志
+[查看 Star History 交互页](https://www.star-history.com/#lankerr/2026-glados-checkin&Date) · [手绘图工具源码](https://github.com/star-history/star-history)
 
-### 2026-11-14：签到状态公告（文档更新）
+**仓库总数：108 Stars · 347 Forks**
 
-- 在 README 顶部区分 Turnstile 拒绝实测、历史成功、手动/重复签到及工单反馈。
-- 添加来源和脱敏数据征集入口；本次没有修改签到代码或发布验证修复。
+[![108 Stars and 347 official Forks, with 350 enumerable network records](docs/assets/star-fork-history.svg)](docs/star-fork-data.md)
 
-### 2026-09-30：新版会话与设备校验修复
-
-- 合并 [@badpinkman 的 PR #18](https://github.com/lankerr/2026-glados-checkin/pull/18)，适配 `gld:sess` / `gld:sess.sig` 和 `GLADOS_USER_AGENT`。
-- 旧会话导致的“没有权限”需要通过重新登录、更新完整 Cookie 解决；设备校验还要求 User-Agent 与生成会话的浏览器一致。Fork 同步代码不会自动更新个人仓库的 Secrets 和 Variables。
-- 维护者仓库在更新配置后完成真实验证：[首次签到成功](https://github.com/lankerr/2026-glados-checkin/actions/runs/36687039069)，[同日重复签到正常返回](https://github.com/lankerr/2026-glados-checkin/actions/runs/36708285323)。
-
-### v1.2.0 (2026-08-05)
-
-- 识别 `Today's observation logged...` 等 2026 正常返回，不再显示“成功 0/1”
-- 失败自动重试三次，最终失败返回非零退出码
-- 默认仅失败推送，避免多个调度器造成通知轰炸
-- 每天一次签到、每月一次保活，替代每天保活提交
-- 修正 workflow dispatch 的 PAT 权限、HTTP 状态码和 404 排障说明
-
-### v1.1.0 (2026-01-25) 🔥 重大修复
-
-**问题**：签到始终返回 "please checkin via https://glados.cloud"，导致机器人无法签到。
-
-**原因**：GLaDOS 官方更新了 API，签到 token 必须从 `glados.one` 改为 `glados.cloud`。
-
-**修复**：更新 [`checkin.py`](checkin.py) 中的 token 参数。
-
-**排查过程**：
-
-1. 使用浏览器 DevTools 抓包分析真实签到请求
-2. 对比 Python 脚本与浏览器请求的差异
-3. 尝试添加 Headers、模拟 TLS 指纹等方案（均无效）
-4. 最终通过测试不同 token 值发现问题根源
-
-> 💡 如果你在使用其他签到项目遇到同样问题，可以参考本项目的修复方案！
-
-### v1.0.0 (2026-01-20)
-
-- 初始版本发布
-- 支持 glados.cloud 域名
-- PushPlus 微信推送
-- GitHub Actions 自动签到
+<sub>2026-11-16 静态快照 · Star History 官方手绘组件 · Stars 108；官方 Fork 总数快照 347，递归可枚举 Fork 网络 350（含间接 Fork）。两者口径不同、差异原因未定；图不会自动更新。[数据口径与 CSV](docs/star-fork-data.md)</sub>
 
 ---
 
-## 📝 License
+<a id="quick-start"></a>
+## 快速开始
 
-MIT
+> [!IMPORTANT]
+> 完整签到模式默认启用 `EXCHANGE_PLAN=plan500` 积分自动兑换。不希望兑换时先设 `off`；只读模式不会兑换。
+
+### 选择你的使用方式
+
+| 你想做什么 | 推荐入口 | 会发生什么 |
+| --- | --- | --- |
+| 在自己的电脑尝试签到 | [本地运行](#local) | 接口签到；遇到特定验证拒绝时尝试本地浏览器通道 |
+| 不开电脑，只核对状态 | [GitHub Actions](#actions) | 定时读取积分、剩余天数并推送，不代表完成签到 |
+| 先确认 Cookie 是否有效 | [只读诊断](#diagnostics) | 只查询状态，不签到、不兑换、不推送 |
+| 懒人浏览器方案（Beta） | [浏览器插件](extension/README.md) | 零配置：用浏览器登录态，三时段自动签到，徽章显示连续天数 |
+
+> Actions 定时默认**只读核对**，不是云端首次签到；本地成功记录不代表普遍或长期保证。[查看运行边界](#status)
+
+<a id="local"></a>
+### 1. 本地运行
+
+需要 Python 和可用的 Chrome / Edge。先下载仓库，在自己的电脑中安装依赖：
+
+```bash
+git clone https://github.com/lankerr/2026-glados-checkin.git
+cd 2026-glados-checkin
+python -m pip install -r requirements.txt
+```
+
+按[图解步骤](docs/usage.md#get-cookie)取得本人账号的完整 Cookie，在**本地环境变量**中配置 `GLADOS_COOKIE`。必须包含 `gld:sess` 与 `gld:sess.sig`，不要把真实值写入代码、Issue 或截图。需要设备匹配时，配置同一浏览器的 `GLADOS_USER_AGENT`。
+
+先做只读检查。以下为 Windows PowerShell 示例，Cookie 应已通过本地私密配置设置：
+
+```powershell
+$env:EXCHANGE_PLAN = "off"
+$env:CHECKIN_DIAGNOSTIC_ONLY = "true"
+python checkin.py
+```
+
+检查通过只证明账号状态可读，不证明签到验证已通过。确定要执行一次签到时，关闭诊断模式：
+
+```powershell
+$env:CHECKIN_DIAGNOSTIC_ONLY = "false"
+python checkin.py
+```
+
+运行可能短暂打开浏览器窗口。失败或响应不明确时，先核对官网记录，不要并发或反复补签。已配置好的用户无需为阅读本次文档而重新部署。
+
+<details>
+<summary>Windows 安装脚本与定时任务</summary>
+
+仓库包含 [`install.ps1`](install.ps1) 和 [`一键安装.cmd`](一键安装.cmd)，它们不是上面的手动流程。请在执行前检查脚本：安装器会安装依赖、生成本地配置及启动脚本，并注册每天 **09:30 / 12:30 / 20:30（系统本地时间）** 的计划任务；不等于三次奖励，也没有证据证明这样一定更稳定。
+
+当前安装器的 `user-agent.txt` 检查中使用了 `Get-Path`，仓库未定义此命令，标准 PowerShell 不提供它；当文件已存在且前面的短路条件未命中时可能在此失败。本次只改文档，未修复或在 Windows 验收安装器。
+
+安装器生成的 `cookie.txt`、`user-agent.txt` 和 `run-checkin.ps1` 不在当前 `.gitignore` 的明确忽略列表中。不要将含凭据的文件提交、打包公开或共享。该风险说明不代表已经发生泄露。建议先用上面的手动只读诊断流程。
+
+</details>
+
+<a id="actions"></a>
+### 2. 云端只读核对
+
+1. **Fork** 本仓库，在 **Settings → Secrets and variables → Actions** 添加 `GLADOS_COOKIE` Secret。
+2. 需要通知时配置 PushPlus、Server酱或 Telegram；凭据使用 Secrets，配置前了解[通知隐私](#privacy)。
+3. 在 **Actions → GLaDOS 2026 Checkin → Run workflow** 选择 `dispatch_source=manual`，勾选 **`notify_status_only`**。
+
+内置 schedule 计划在北京时间 **09:30** 运行，实际可能延迟。定时和外部触发默认进入只读模式；不要同时启用内置 schedule 与外部 cron。`ALLOW_SCHEDULED_CHECKIN=true` 会改变这一行为，不应只为消除失败提示而开启。
+
+[完整图解与推送配置 →](docs/usage.md#deploy)
+
+<a id="diagnostics"></a>
+### 3. 只读诊断
+
+- **本地：** 设置 `CHECKIN_DIAGNOSTIC_ONLY=true` 后运行脚本。
+- **Actions：** 选择 `dispatch_source=manual` 并勾选 `diagnose_only`。
+- **范围：** 只查询登录状态，不签到、兑换或推送；GitHub 自身仍可能发送工作流失败邮件。
+
+## 功能与配置
+
+| 能力 | 说明 |
+| --- | --- |
+| 签到状态 | 区分成功、已签到、认证失败与其他失败 |
+| 积分核对 | 查询余额、流水与剩余天数，不把历史变动当成本次奖励 |
+| 可选通知 | PushPlus、Server酱 Turbo / ³、Telegram |
+| 自动兑换 | 完整模式按 `EXCHANGE_PLAN` 尝试兑换；可设 `off` 关闭 |
+| 多种部署 | Python 本地、GitHub Actions、NixOS 参考配置 |
+
+最常用的设置：
+
+| 变量 | 用途 |
+| --- | --- |
+| `GLADOS_COOKIE` | 必需的账号会话凭据，妥善保密 |
+| `GLADOS_USER_AGENT` | 与创建会话的浏览器匹配 |
+| `CHECKIN_NOTIFY_STATUS_ONLY=true` | 只读状态与积分通知 |
+| `PUSH_LEVEL=all` | 普通运行每次推送；默认 `fail_only` |
+| `EXCHANGE_PLAN=off` | 关闭积分自动兑换 |
+
+[全部环境变量、Cookie 排障、多账号与部署参考 →](docs/usage.md)
+
+<a id="status"></a>
+<a id="status-2026-11-14"></a>
+## 当前运行边界
+
+- **验证由服务端决定。** 本地成功记录不是通用保证；云端只读成功、单元测试通过或“今日已签到”，都不等于自动首次签到成功。本项目不提供打码或绕过方案。
+- **重复运行不保证幂等。** 当前浏览器流程在响应丢失等模糊结果下可能再次提交；不要把“没收到响应”理解为“没提交”。
+- **多账号需谨慎。** 当前浏览器通道共用持久化 profile，存在残留会话混用风险，并非已经证实混用。安全收紧方案见 [Draft PR #38](https://github.com/lankerr/2026-glados-checkin/pull/38)，不能把未合并方案当成已部署功能。
+- **积分不是脚本承诺。** 低积分与请求失败是两回事；部分账号页面提示 `Free cap max 2`。实际奖励以控制台为准，付费不保证高积分或免除验证，不建议为了排查而购买套餐。
+- **流水有观察范围。** 当前代码只检查返回流水的前 10 条，筛选北京时间当天正变动并排除 exchange/refund。通知中的“今日加分”不是完整当日合计，也不能唯一关联本次请求。
+- **Nix 凭据需另行处理。** 当前模块的明文配置可能进入 Nix store；[NixOS 示例](docs/usage.md#nixos)是接口参考，不是安全秘密注入方案。
+
+更多观察与反馈：[Issue #37](https://github.com/lankerr/2026-glados-checkin/issues/37) · [积分讨论 #28](https://github.com/lankerr/2026-glados-checkin/issues/28) · [历史观察记录](docs/status-notes.md) · [历史更新](docs/changelog.md)
+
+<a id="faq"></a>
+## 常见问题
+
+<details>
+<summary>为什么通知写“只读”，但积分增加了？</summary>
+
+本地任务或官网操作可能已完成签到，云端随后读取了新的余额。通知只是观察，不能凭同日同额判定是哪次请求产生奖励。
+
+</details>
+
+<details>
+<summary>Cookie 失效或出现 device-mismatch 怎么办？</summary>
+
+重新核对完整 `gld:sess` 与 `gld:sess.sig`，以及创建该会话的浏览器 User-Agent。先做只读诊断，不要把网络错误一律归因于 Cookie 过期。[详细排障](docs/usage.md#cookie)
+
+</details>
+
+<details>
+<summary>为什么有时没有通知？</summary>
+
+普通模式默认 `PUSH_LEVEL=fail_only`，正常完成且没有兑换事件时不推送。也请核对渠道凭据、日志和是否开启 `diagnose_only`。[通知配置](docs/usage.md#notifications)
+
+</details>
+
+<a id="privacy"></a>
+## 使用与隐私
+
+本项目是非官方社区工具，仅用于本人或已获明确授权的账号。请遵守适用法律法规，以及 GLaDOS、GitHub 和所选通知服务的规则，并自行确认相应自动化方式是否被允许。
+
+**Cookie、Token、SendKey 是凭据。** GitHub 部署使用 Secrets，不要写入代码、公开日志、Issue、完整请求头或 HAR；截图先遮挡邮箱和账号信息。通知可能包含邮箱、积分、剩余天数及兑换信息，并发送给你配置的第三方推送服务。
+
+接口、验证、奖励和服务额度可能变化。项目按现状提供，不承诺持续可用、固定积分、补差或兑换成功。在适用法律允许的范围内，维护者与贡献者不对使用引起的服务中断、数据或凭据泄露、积分及账号权益损失承担赔偿责任；本说明不排除依法不得免除的责任。
+
+## 参与项目
+
+反馈时请附上版本或 commit、运行环境、脱敏错误和只读诊断结果。不要为了反馈而重复签到或购买套餐。
+
+[提交问题](https://github.com/lankerr/2026-glados-checkin/issues) · [贡献者与致谢](docs/contributors.md) · [更新记录](docs/changelog.md) · [旧版知识归档](docs/archive/README-20261116.md)
+
+维护者与社区共同改进这个项目。感谢每一次认真反馈和 Pull Request。
+
+## 许可
+
+沿用原项目 README 的 MIT 许可声明。图表组件的第三方许可单独保留于 [Star History License](docs/star-history-LICENSE.txt)。
 
 ---
 
-<div align="center">
+<details>
+<summary>旧版文档链接入口</summary>
 
-**Made with ❤️ for GLaDOS users in 2026**
+旧版首页的配置、图解、常见问题和部署教程已整理到 [使用手册](docs/usage.md)，完整旧文另存 [历史归档](docs/archive/README-20261116.md)。历史修复见 [更新记录](docs/changelog.md)，贡献名单见 [致谢](docs/contributors.md)。下列兼容锚点保留旧链接定位，内容请从上述入口阅读。
 
-**🔧 文档状态更新：2026-11-14；签到可用性见顶部公告**
+<!-- legacy-anchor-start -->
+<a id="-5-分钟配置-glados-自动签到"></a>
+<a id="-现在怎么签到默认方案本地真浏览器模式"></a>
+<a id="-兜底机制为什么它更稳只讲效果不谈实现"></a>
+<a id="浏览器依赖异常时参考-requirementstxt-内的注释处理"></a>
+<a id="-2026-11-14-公告turnstile-观察结果与待修复风险"></a>
+<a id="-为什么选择本项目"></a>
+<a id="-签到成功预览"></a>
+<a id="-云端路径3-步配置状态推送turnstile-时期为只读模式"></a>
+<a id="使用说明与免责声明"></a>
+<a id="-重要说明"></a>
+<a id="-为什么你需要这个"></a>
+<a id="-我们的探索过程"></a>
+<a id="问题现象"></a>
+<a id="排查步骤"></a>
+<a id="失败-"></a>
+<a id="成功-"></a>
+<a id="-功能特点"></a>
+<a id="-配置参数-环境变量"></a>
+<a id="-2026-年-9-月新版会话-cookie"></a>
+<a id="签到只获得-1-积分28"></a>
+<a id="-积分自动兑换11"></a>
+<a id="-快速部署"></a>
+<a id="第一步fork-本仓库"></a>
+<a id="第二步获取-cookie-"></a>
+<a id="21-打开浏览器开发者工具"></a>
+<a id="22-登录-glados-并获取-cookie"></a>
+<a id="23-cookie-格式重要"></a>
+<a id="24-验证你的-cookie-格式"></a>
+<a id="将你的-cookie-粘贴到下面的引号中"></a>
+<a id="验证"></a>
+<a id="第三步配置-github-secrets-"></a>
+<a id="第四步配置微信推送可选"></a>
+<a id="server酱"></a>
+<a id="pushplus"></a>
+<a id="第五步启用-actions-"></a>
+<a id="-可选备用cron-joborg"></a>
+<a id="配置步骤"></a>
+<a id="第一步获取-github-personal-access-token"></a>
+<a id="第二步注册-cron-joborg"></a>
+<a id="第三步创建签到任务930"></a>
+<a id="第四步测试验证"></a>
+<a id="-常见陷阱与错误"></a>
+<a id="-本地独立服务器部署教程"></a>
+<a id="第一步安装依赖"></a>
+<a id="第二步配置并运行"></a>
+<a id="配置-cookie"></a>
+<a id="可选配置推送"></a>
+<a id="执行签到"></a>
+<a id="第三步设置定时任务-cron"></a>
+<a id="-nixos-服务配置"></a>
+<a id="使用方法-flakes"></a>
+<a id="-推送效果预览"></a>
+<a id="-自动运行时间"></a>
+<a id="-常见问题"></a>
+<a id="-运行机制与限制"></a>
+<a id="-项目文件"></a>
+<a id="-需要帮助"></a>
+<a id="-致谢"></a>
+<a id="-更新日志"></a>
+<a id="2026-11-14签到状态公告文档更新"></a>
+<a id="2026-09-30新版会话与设备校验修复"></a>
+<a id="v120-2026-08-05"></a>
+<a id="v110-2026-01-25--重大修复"></a>
+<a id="v100-2026-01-20"></a>
+<a id="-license"></a>
+<a id="-star-history"></a>
+<!-- legacy-anchor-end -->
 
-**⭐ Star 一下，支持作者持续更新！⭐**
+[打开使用手册](docs/usage.md)
 
-</div>
+</details>

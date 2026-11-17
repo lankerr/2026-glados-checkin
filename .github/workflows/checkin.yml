@@ -2,7 +2,10 @@ name: GLaDOS 2026 Checkin
 
 on:
   schedule:
-    # 北京时间 09:30（UTC 01:30）。一天一次即可，脚本会在失败时自动重试。
+    # 北京时间 09:30（UTC 01:30）。Turnstile 时期：定时与外部触发的运行自动降级为
+    # 只读状态推送（CHECKIN_NOTIFY_STATUS_ONLY=true），不再尝试签到，避免必然的
+    # 失败推送；机房 IP 无法通过 Turnstile。如官方撤下验证，把仓库变量
+    # ALLOW_SCHEDULED_CHECKIN 设为 true 即恢复完整签到。
     - cron: '30 1 * * *'
   workflow_dispatch:
     inputs:
@@ -54,7 +57,7 @@ jobs:
       - name: Run Tests
         run: python -m unittest discover -s tests -v
 
-      - name: Run Checkin
+      - name: Run Checkin (scheduled/external degrade to read-only status push)
         run: python checkin.py
         timeout-minutes: 8
         env:
@@ -63,7 +66,9 @@ jobs:
           # Prefer the repository Variable; accept a same-named Secret for compatibility.
           GLADOS_USER_AGENT: ${{ vars.GLADOS_USER_AGENT || secrets.GLADOS_USER_AGENT }}
           CHECKIN_DIAGNOSTIC_ONLY: ${{ inputs.diagnose_only && 'true' || 'false' }}
-          CHECKIN_NOTIFY_STATUS_ONLY: ${{ inputs.notify_status_only && 'true' || 'false' }}
+          # Turnstile 时期：schedule 与外部触发（cron-job.org 等）一律降级为只读状态推送；
+          # 手动运行(manual)按用户勾选；设仓库变量 ALLOW_SCHEDULED_CHECKIN=true 可整体恢复完整签到。
+          CHECKIN_NOTIFY_STATUS_ONLY: ${{ ((github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.dispatch_source != 'manual')) && (vars.ALLOW_SCHEDULED_CHECKIN || '') != 'true') && 'true' || (inputs.notify_status_only && 'true' || 'false') }}
           PUSHPLUS_TOKEN: ${{ secrets.PUSHPLUS_TOKEN }}
           SERVERCHAN_SENDKEY: ${{ secrets.SERVERCHAN_SENDKEY }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
