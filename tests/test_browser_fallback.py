@@ -162,6 +162,14 @@ class BrowserDetectionTests(unittest.TestCase):
                 '/var/lib/glados/glados-checkin-browser',
             )
 
+    def test_log_dir_respects_state_directory(self):
+        with mock.patch.dict(os.environ, {'STATE_DIRECTORY': '/var/lib/glados'}), \
+                mock.patch('os.makedirs'):
+            self.assertEqual(
+                browser_checkin.log_dir(),
+                '/var/lib/glados/logs',
+            )
+
 
 class CDPEndpointTests(unittest.TestCase):
     def test_ws_url_returned_directly(self):

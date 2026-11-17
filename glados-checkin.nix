@@ -122,6 +122,7 @@ in
       serviceConfig = {
         Type = "oneshot";
         ExecStart = "${cfg.package}/bin/glados-checkin";
+        WorkingDirectory = "%S/glados-checkin";
         LoadCredential = [ ]; # Can be used for secrets later if needed
         DynamicUser = true;
         StateDirectory = "glados-checkin";

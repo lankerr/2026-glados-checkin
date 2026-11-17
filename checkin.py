@@ -498,8 +498,9 @@ def attempt_browser_checkin(client, max_attempts=2):
         try:
             result = browser_checkin(client.cookie, ua)
         except Exception as e:  # noqa: BLE001 - 兜底通道绝不冒泡异常
+            log(f"⚠️ 浏览器签到调用发生异常: {e}")
             result = {'request_failed': True, 'reason': 'browser-checkin-error',
-                      'detail': type(e).__name__}
+                      'detail': f"{type(e).__name__}: {e}"}
         if is_normal_checkin_result(result) or is_non_retryable_checkin_result(result):
             return result
         if i < max_attempts:

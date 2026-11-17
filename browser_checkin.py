@@ -34,6 +34,7 @@ import socket
 import struct
 import subprocess
 import sys
+import tempfile
 import time
 from datetime import datetime, timezone, timedelta
 from urllib.parse import urlsplit
@@ -67,6 +68,22 @@ def profile_dir():
         or os.path.expanduser('~')
     )
     return os.path.join(base, 'glados-checkin-browser')
+
+
+def log_dir():
+    """日志与截图保存目录：优先使用 STATE_DIRECTORY/logs，避免在无写权限的工作目录下报错。"""
+    base = os.environ.get('STATE_DIRECTORY') or '.'
+    d = os.path.join(base, 'logs')
+    try:
+        os.makedirs(d, exist_ok=True)
+        return d
+    except OSError:
+        d = os.path.join(tempfile.gettempdir(), 'glados-logs')
+        try:
+            os.makedirs(d, exist_ok=True)
+        except OSError:
+            pass
+        return d
 
 
 def parse_cookie_header(cookie_header, base_url):
@@ -643,7 +660,7 @@ def _run_cdp_session(ws_url, cookie_header, user_agent=None):
                     snap = cdp.call('Page.captureScreenshot', {'format': 'png'})
                     if snap and 'result' in snap and 'data' in snap['result']:
                         netloc = urlsplit(base).netloc.replace(':', '_')
-                        snap_path = os.path.join('logs', f'browser_checkin_timeout_{netloc}.png')
+                        snap_path = os.path.join(log_dir(), f'browser_checkin_timeout_{netloc}.png')
                         with open(snap_path, 'wb') as f:
                             f.write(base64.b64decode(snap['result']['data']))
                         _log(f"⚠️ 等待验证超时（截图已存 {snap_path}）")
@@ -658,11 +675,12 @@ def _run_cdp_session(ws_url, cookie_header, user_agent=None):
                     try:
                         snap = cdp.call('Page.captureScreenshot', {'format': 'png'})
                         if snap and 'result' in snap and 'data' in snap['result']:
-                            with open(os.path.join('logs', 'browser_checkin_turnstile.png'), 'wb') as f:
+                            snap_path = os.path.join(log_dir(), 'browser_checkin_turnstile.png')
+                            with open(snap_path, 'wb') as f:
                                 f.write(base64.b64decode(snap['result']['data']))
+                            _log(f"⚠️ 服务端仍要求 Turnstile（截图已存 {snap_path}）")
                     except Exception:
                         pass
-                    _log("⚠️ 服务端仍要求 Turnstile（截图已存 logs/browser_checkin_turnstile.png）")
                 return result
 
         return {'request_failed': True, 'reason': 'browser-checkin-failed',
@@ -680,8 +698,11 @@ def _try_domains_cdp(browser_path, cookie_header, headless, user_agent=None):
     s.close()
 
     p_dir = profile_dir()
-    os.makedirs(p_dir, exist_ok=True)
-    os.makedirs('logs', exist_ok=True)
+    try:
+        os.makedirs(p_dir, exist_ok=True)
+    except OSError as e:
+        _log(f"⚠️ 创建浏览器配置目录失败 ({p_dir}): {e}")
+    log_dir()
 
     args = [
         browser_path,
@@ -694,21 +715,31 @@ def _try_domains_cdp(browser_path, cookie_header, headless, user_agent=None):
         '--window-size=1920,1080',
         '--lang=zh-CN',
     ]
-    if hasattr(os, 'geteuid') and os.geteuid() == 0:
+    # 在 root 环境、systemd 守护进程或 Linux 无头环境下添加安全/沙箱兼容参数
+    if hasattr(os, 'geteuid') and (os.geteuid() == 0 or os.environ.get('INVOCATION_ID') or sys.platform.startswith('linux')):
         args.append('--no-sandbox')
     if headless:
         args.append('--headless=new')
+        args.append('--disable-gpu')
+        args.append('--disable-dev-shm-usage')
     if user_agent:
         args.append(f'--user-agent={user_agent}')
     args.append('about:blank')
 
     _log(f"🚀 启动系统浏览器: {os.path.basename(browser_path)} (headless={headless})")
-    proc = subprocess.Popen(args, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    proc = subprocess.Popen(
+        args,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.PIPE,
+        cwd=p_dir if os.path.isdir(p_dir) else None,
+    )
 
     try:
         # 轮询等待 CDP 服务端口就绪
         ws_url = None
         for _ in range(50):
+            if proc.poll() is not None:
+                break
             try:
                 req = urllib.request.urlopen(f'http://127.0.0.1:{port}/json', timeout=1)
                 pages = json.loads(req.read().decode())
@@ -720,8 +751,18 @@ def _try_domains_cdp(browser_path, cookie_header, headless, user_agent=None):
             time.sleep(0.1)
 
         if not ws_url:
+            err = ''
+            if proc.poll() is not None and proc.stderr:
+                try:
+                    err = proc.stderr.read().decode('utf-8', errors='replace').strip()
+                except Exception:
+                    pass
+            detail = f'未能连接到浏览器 CDP 调试端口 (exit code: {proc.returncode})'
+            if err:
+                detail += f': {err[:300]}'
+            _log(f"⚠️ {detail}")
             return {'request_failed': True, 'reason': 'browser-checkin-failed',
-                    'detail': '未能连接到浏览器 CDP 调试端口'}
+                    'detail': detail}
 
         return _run_cdp_session(ws_url, cookie_header, user_agent=user_agent)
     except Exception as e:
