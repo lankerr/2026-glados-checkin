@@ -801,12 +801,18 @@ def _try_domains_playwright(context, cookie_header):
             'detail': str(last_error or '所有域名均未完成签到')}
 
 
+# 模块运行时状态：若此前检测到服务端要求设备一致性，则在后续重试中优先使用配置的 User-Agent
+_PREFER_CONFIGURED_UA = False
+
+
 def browser_checkin(cookie_header, user_agent, domains=None):
     """用真浏览器完成一次签到，返回 /api/user/checkin 的 JSON（或失败原因 dict）。
 
     优先使用系统已安装的 Edge/Chrome 浏览器（通过原生 CDP 协议，无需安装 Playwright）；
     未检测到系统浏览器时，若环境已装有 Playwright 则回退到 Playwright 运行。
     """
+    global _PREFER_CONFIGURED_UA
+
     if domains:
         globals()['DOMAINS'] = tuple(domains)
 
@@ -830,11 +836,14 @@ def browser_checkin(cookie_header, user_agent, domains=None):
     browser_path = find_browser_executable()
     if browser_path:
         _log(f"🌐 优先使用系统已安装浏览器: {browser_path}")
-        result = _try_domains_cdp(browser_path, cookie_header, headless)
+        initial_ua = user_agent if (_PREFER_CONFIGURED_UA and user_agent) else None
+        result = _try_domains_cdp(browser_path, cookie_header, headless, user_agent=initial_ua)
         if (isinstance(result, dict) and user_agent
                 and result.get('reason') in ('device-mismatch', 'http-auth-rejected')):
-            _log("🔄 服务端判定设备不一致，改用配置的 User-Agent 重试…")
-            result = _try_domains_cdp(browser_path, cookie_header, headless, user_agent=user_agent)
+            _PREFER_CONFIGURED_UA = True
+            if initial_ua is None:
+                _log("🔄 服务端判定设备不一致，改用配置的 User-Agent 重试…")
+                result = _try_domains_cdp(browser_path, cookie_header, headless, user_agent=user_agent)
         return result
 
     # 2. 回退机制：若无系统原生浏览器，但装有 Playwright，则尝试 Playwright
