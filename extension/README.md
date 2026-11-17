@@ -19,7 +19,7 @@
 
 ## 国际化
 
-默认语言为简体中文（`_locales/zh_CN`），并提供英文（`_locales/en`）。Chrome 会按浏览器语言自动切换；缺少对应语言时回退到 `default_locale`（zh_CN）。
+默认语言为简体中文（`_locales/zh_CN`），并提供英文（`_locales/en`）。Chrome 会按浏览器语言自动切换；缺少对应语言时回退到 `default_locale`（zh_CN）。弹窗文案通过 `data-i18n` + `chrome.i18n.getMessage()` 填充（HTML 中的 `__MSG_*__` 不会自动替换）。
 
 打包 zip 时必须带上 `_locales` 目录，否则会报 `Default locale was specified, but _locales subtree is missing.`
 
