@@ -13,12 +13,11 @@
 
 设计说明：
   - 支持免 Playwright 的原生 CDP 驱动模式：优先寻找系统安装的 Edge / Chrome /
-    Chromium（与 msrewarder 一致），通过 Chrome DevTools Protocol 自动化控制，
+    Chromium，通过 Chrome DevTools Protocol 自动化控制，
     无需额外安装庞大的 playwright 依赖；同时兼容 Playwright（如已安装且未检测到系统浏览器时回退）。
   - 浏览器持久化目录放在系统用户数据区（STATE_DIRECTORY / LOCALAPPDATA / XDG_DATA_HOME），
     不落在仓库内，避免登录态被误提交；目录保存 cf_clearance 等状态，请勿随意删除。
-  - 默认使用浏览器原生 UA（与 Sec-CH-UA 一致，Turnstile 通过率最高）；
-    若服务端返回 device-mismatch，再用 cookie.txt 配套 UA 重试一次。
+  - 优先使用配置的 User-Agent 保持设备一致性；若服务端拒绝，再改用浏览器原生 UA 重试一次。
   - GitHub Actions 等机房环境由 checkin.attempt_browser_checkin 预先禁用，
     本模块不做二次判断。
 
@@ -95,7 +94,7 @@ def parse_cookie_header(cookie_header, base_url):
 def find_browser_executable(custom=None):
     """在系统中寻找可用的 Edge、Chrome 或 Chromium 可执行文件路径。
 
-    探测策略（与 msrewarder 类似）：
+    探测策略：
     1. 自定义路径参数或环境变量 GLADOS_BROWSER_PATH
     2. PATH 环境变量中的常用浏览器名称
     3. Linux / NixOS / macOS / Windows 常见安装路径及包管理器路径
