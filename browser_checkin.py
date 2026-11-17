@@ -43,8 +43,8 @@ import urllib.request
 # 浏览器通道优先级：真实 Chrome > 真实 Edge > Playwright 自带 Chromium
 BROWSER_CHANNELS = ('chrome', 'msedge', None)
 CHECKIN_PAGE_PATH = '/console/checkin'
-# glados.network 当前 DNS 不稳定，暂不参与浏览器回退
-DOMAINS = ('https://glados.cloud', 'https://glados.rocks')
+# 2026-11-17 实测在线的官方域名列表（one 为旧域名，留作最后回退）
+DOMAINS = ('https://glados.cloud', 'https://glados.rocks', 'https://glados.network', 'https://glados.space', 'https://glados.one')
 # 页面自身等待 Turnstile 最长约 90s + 2.5s 最小间隔 + 网络余量
 RESULT_WAIT_SECONDS = 150
 BUTTON_WAIT_SECONDS = 45
@@ -372,8 +372,308 @@ class CDPClient:
         self.ws.close()
 
 
+def resolve_cdp_url(cdp_url):
+    """从给定的 CDP URL（HTTP/HTTPS 端点或 WebSocket 地址）解析出 ws_url 与可选的清理回调。"""
+    cdp_url = cdp_url.strip()
+    if cdp_url.startswith(('ws://', 'wss://')):
+        return cdp_url, None
+
+    base_url = cdp_url.rstrip('/')
+    # 优先尝试在已有浏览器中开一个新标签页 (/json/new?about:blank)
+    try:
+        req = urllib.request.Request(f'{base_url}/json/new?about:blank', method='PUT')
+        with urllib.request.urlopen(req, timeout=5) as r:
+            info = json.loads(r.read().decode())
+            ws = info.get('webSocketDebuggerUrl')
+            target_id = info.get('id')
+            if ws:
+                def cleanup():
+                    try:
+                        urllib.request.urlopen(f'{base_url}/json/close/{target_id}', timeout=3)
+                    except Exception:
+                        pass
+                return ws, cleanup
+    except Exception:
+        pass
+
+    # 若 /json/new 不可用，寻找当前可用的 Page 目标
+    try:
+        with urllib.request.urlopen(f'{base_url}/json', timeout=5) as r:
+            pages = json.loads(r.read().decode())
+            for p in pages:
+                if p.get('type') == 'page' and p.get('webSocketDebuggerUrl'):
+                    return p['webSocketDebuggerUrl'], None
+            if pages and 'webSocketDebuggerUrl' in pages[0]:
+                return pages[0]['webSocketDebuggerUrl'], None
+    except Exception as e:
+        raise RuntimeError(f"连接 CDP 服务 {cdp_url} 失败: {e}")
+
+    raise RuntimeError(f"CDP 服务 {cdp_url} 未提供可用的页面目标")
+
+
+def _run_cdp_session(ws_url, cookie_header, user_agent=None):
+    """通过已建立的 CDP WebSocket 会话执行签到。"""
+    cdp = CDPClient(ws_url)
+    last_error = None
+    try:
+        # 开启网络与页面事件
+        cdp.call('Page.enable')
+        cdp.call('Network.enable')
+        cdp.call('Runtime.enable')
+
+        if user_agent:
+            cdp.call('Network.setUserAgentOverride', {'userAgent': user_agent})
+
+        # 注入 fetch/XHR 拦截脚本，保证 100% 捕获 /api/user/checkin 响应体
+        preload_js = r"""
+        try {
+            Object.defineProperty(navigator, 'webdriver', {
+                get: () => undefined,
+                configurable: true,
+            });
+        } catch(e) {}
+        window._glados_checkin_result = null;
+
+        function _isCheckinPost(url, method) {
+            if (!url) return false;
+            if (method && String(method).toUpperCase() !== 'POST') return false;
+            try {
+                const u = new URL(url, window.location.href);
+                return u.pathname.replace(/\/$/, '') === '/api/user/checkin';
+            } catch(e) {
+                const s = String(url);
+                return s.includes('/api/user/checkin') && !s.includes('/challenge');
+            }
+        }
+
+        if (window.fetch) {
+            const _f = window.fetch;
+            window.fetch = async function(...args) {
+                const resp = await _f.apply(this, args);
+                try {
+                    const url = (args[0] && args[0].url) || args[0] || '';
+                    const opts = args[1] || (typeof args[0] === 'object' ? args[0] : {});
+                    const method = opts.method || 'GET';
+                    if (_isCheckinPost(url, method)) {
+                        const clone = resp.clone();
+                        clone.text().then(text => {
+                            try {
+                                const parsed = JSON.parse(text);
+                                if (!parsed.nonce) {
+                                    window._glados_checkin_result = parsed;
+                                }
+                            } catch(e) {
+                                window._glados_checkin_result = { code: 0, message: text };
+                            }
+                        }).catch(() => {});
+                    }
+                } catch(e) {}
+                return resp;
+            };
+        }
+        if (window.XMLHttpRequest) {
+            const _XHR = window.XMLHttpRequest;
+            const _origOpen = _XHR.prototype.open;
+            const _origSend = _XHR.prototype.send;
+            _XHR.prototype.open = function(method, url) {
+                this._glados_method = method;
+                this._glados_url = url;
+                return _origOpen.apply(this, arguments);
+            };
+            _XHR.prototype.send = function() {
+                this.addEventListener('load', function() {
+                    try {
+                        if (_isCheckinPost(this._glados_url, this._glados_method)) {
+                            try {
+                                const parsed = JSON.parse(this.responseText);
+                                if (!parsed.nonce) {
+                                    window._glados_checkin_result = parsed;
+                                }
+                            } catch(e) {
+                                window._glados_checkin_result = { code: 0, message: this.responseText };
+                            }
+                        }
+                    } catch(e) {}
+                });
+                return _origSend.apply(this, arguments);
+            };
+        }
+        """
+        cdp.call('Page.addScriptToEvaluateOnNewDocument', {'source': preload_js})
+
+        for base in DOMAINS:
+            captured = {'json': None}
+            cdp.checkin_request_id = None
+            cdp.checkin_loading_finished = False
+            last_turnstile_click = 0
+            _log(f"📄 正在通过 {base} 打开官方签到页…")
+
+            # 注入该域名的安全会话 Cookie
+            cookies = parse_cookie_header(cookie_header, base)
+            cdp.call('Network.setCookies', {'cookies': cookies})
+
+            # 导航到签到页面
+            cdp.call('Page.navigate', {'url': base + CHECKIN_PAGE_PATH})
+
+            # 循环等待按钮可点击并点击
+            btn_deadline = time.monotonic() + BUTTON_WAIT_SECONDS
+            clicked = False
+            while time.monotonic() < btn_deadline:
+                # 优先检查是否已有页面自动请求的响应
+                res = cdp.evaluate(r"""
+                (() => {
+                    if (window._glados_checkin_result) {
+                        return { status: 'captured', json: window._glados_checkin_result };
+                    }
+                    const btns = Array.from(document.querySelectorAll('button, a, div[role="button"]'));
+                    const btn = btns.find(b => {
+                        const t = (b.textContent || '').trim();
+                        return /check\s*in/i.test(t) || /签到/i.test(t);
+                    });
+                    if (btn) {
+                        if (btn.disabled || btn.getAttribute('aria-disabled') === 'true') {
+                            return { status: 'disabled' };
+                        }
+                        btn.click();
+                        return { status: 'clicked' };
+                    }
+                    return { status: 'waiting' };
+                })()
+                """)
+                if isinstance(res, dict):
+                    if res.get('status') == 'captured' and res.get('json'):
+                        captured['json'] = res['json']
+                        break
+                    if res.get('status') == 'clicked':
+                        clicked = True
+                        _log("🖱️ 点击 Check in，页面将自行完成 Turnstile 验证…")
+                        break
+                time.sleep(0.5)
+
+            if not clicked and not captured['json']:
+                last_error = f'{base}: 未找到可点击的 Check in 按钮'
+                _log(f"⚠️ {last_error}，尝试下一个域名")
+                continue
+
+            # 等待签到接口响应及 Turnstile 验证完成
+            result_deadline = time.monotonic() + RESULT_WAIT_SECONDS
+            while time.monotonic() < result_deadline and not captured['json']:
+                cdp.poll_events(timeout=0.3)
+
+                # 1. 优先通过 CDP Network.responseReceived 获取响应体
+                if cdp.checkin_request_id:
+                    body_res = cdp.call('Network.getResponseBody', {'requestId': cdp.checkin_request_id})
+                    if body_res and 'result' in body_res and 'body' in body_res['result']:
+                        raw_body = body_res['result']['body']
+                        try:
+                            parsed = json.loads(raw_body)
+                            # 排除 /api/user/checkin/challenge 响应 (包含 nonce/ttl 且无 message)
+                            if isinstance(parsed, dict) and ('nonce' in parsed and 'ttl' in parsed and 'message' not in parsed):
+                                cdp.checkin_request_id = None
+                            else:
+                                captured['json'] = parsed
+                                _log("✅ 通过 CDP 网络事件成功捕获签到接口响应！")
+                                break
+                        except Exception:
+                            pass
+
+                # 2. 检查 JavaScript hook (fetch & XHR)
+                hook_res = cdp.evaluate("window._glados_checkin_result || null")
+                if isinstance(hook_res, dict) and hook_res:
+                    if 'nonce' in hook_res and 'ttl' in hook_res and 'message' not in hook_res:
+                        pass
+                    else:
+                        captured['json'] = hook_res
+                        _log("✅ 通过页面 JS Hook 成功捕获签到结果！")
+                        break
+
+                # 3. 检查页面临时弹出的 Toast 浮窗提示（仅限真正包含签到关键词的消息提示）
+                toast_res = cdp.evaluate(r"""
+                (() => {
+                    const notices = Array.from(document.querySelectorAll('.ant-message-notice, .ant-message, [role="alert"]'));
+                    for (const n of notices) {
+                        const text = (n.textContent || '').trim();
+                        if (/checkin!\s*got/i.test(text)) {
+                            return { code: 0, message: text };
+                        }
+                        if (/observation logged/i.test(text) || /repeats/i.test(text)) {
+                            return { code: 1, message: text };
+                        }
+                    }
+                    return null;
+                })()
+                """)
+                if isinstance(toast_res, dict) and toast_res:
+                    captured['json'] = toast_res
+                    _log(f"✅ 从页面 Toast 提示捕获签到结果: {toast_res.get('message')}")
+                    break
+
+                # 4. 检查是否出现需要交互的 Turnstile 验证框并自动点击复选框
+                turnstile_box = cdp.evaluate(r"""
+                (() => {
+                    const iframe = document.querySelector('iframe[src*="challenges.cloudflare.com"]')
+                        || document.querySelector('iframe[title*="Cloudflare"]')
+                        || document.querySelector('iframe[src*="turnstile"]');
+                    if (iframe) {
+                        const rect = iframe.getBoundingClientRect();
+                        if (rect.width > 50 && rect.height > 30) {
+                            return {
+                                x: Math.round(rect.left + 30),
+                                y: Math.round(rect.top + rect.height / 2)
+                            };
+                        }
+                    }
+                    return null;
+                })()
+                """)
+                if isinstance(turnstile_box, dict) and 'x' in turnstile_box and 'y' in turnstile_box:
+                    now = time.monotonic()
+                    if now - last_turnstile_click > 5.0:
+                        last_turnstile_click = now
+                        _log("🖱️ 检测到 Cloudflare Turnstile 验证框，尝试模拟点击复选框…")
+                        tx, ty = turnstile_box['x'], turnstile_box['y']
+                        cdp.call('Input.dispatchMouseEvent', {'type': 'mouseMoved', 'x': tx, 'y': ty})
+                        cdp.call('Input.dispatchMouseEvent', {'type': 'mousePressed', 'x': tx, 'y': ty, 'button': 'left', 'clickCount': 1})
+                        cdp.call('Input.dispatchMouseEvent', {'type': 'mouseReleased', 'x': tx, 'y': ty, 'button': 'left', 'clickCount': 1})
+
+                time.sleep(0.5)
+
+            result = captured['json']
+            if not result:
+                try:
+                    snap = cdp.call('Page.captureScreenshot', {'format': 'png'})
+                    if snap and 'result' in snap and 'data' in snap['result']:
+                        netloc = urlsplit(base).netloc.replace(':', '_')
+                        snap_path = os.path.join('logs', f'browser_checkin_timeout_{netloc}.png')
+                        with open(snap_path, 'wb') as f:
+                            f.write(base64.b64decode(snap['result']['data']))
+                        _log(f"⚠️ 等待验证超时（截图已存 {snap_path}）")
+                except Exception:
+                    pass
+                last_error = f'{base}: 等待 Turnstile 验证或签到响应超时 ({RESULT_WAIT_SECONDS}s)'
+                _log(f"⚠️ {last_error}，尝试下一个域名")
+                continue
+
+            if result:
+                if isinstance(result, dict) and result.get('reason') == 'turnstile':
+                    try:
+                        snap = cdp.call('Page.captureScreenshot', {'format': 'png'})
+                        if snap and 'result' in snap and 'data' in snap['result']:
+                            with open(os.path.join('logs', 'browser_checkin_turnstile.png'), 'wb') as f:
+                                f.write(base64.b64decode(snap['result']['data']))
+                    except Exception:
+                        pass
+                    _log("⚠️ 服务端仍要求 Turnstile（截图已存 logs/browser_checkin_turnstile.png）")
+                return result
+
+        return {'request_failed': True, 'reason': 'browser-checkin-failed',
+                'detail': str(last_error or '所有域名均未完成签到')}
+    finally:
+        cdp.close()
+
+
 def _try_domains_cdp(browser_path, cookie_header, headless, user_agent=None):
-    """使用原生 Chrome/Edge 浏览器（通过 CDP 自动化协议）执行签到。"""
+    """使用本地 Chrome/Edge 浏览器进程（通过 CDP 自动化协议）执行签到。"""
     # 动态分配空闲调试端口
     s = socket.socket()
     s.bind(('127.0.0.1', 0))
@@ -406,7 +706,6 @@ def _try_domains_cdp(browser_path, cookie_header, headless, user_agent=None):
     _log(f"🚀 启动系统浏览器: {os.path.basename(browser_path)} (headless={headless})")
     proc = subprocess.Popen(args, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
-    last_error = None
     try:
         # 轮询等待 CDP 服务端口就绪
         ws_url = None
@@ -425,259 +724,11 @@ def _try_domains_cdp(browser_path, cookie_header, headless, user_agent=None):
             return {'request_failed': True, 'reason': 'browser-checkin-failed',
                     'detail': '未能连接到浏览器 CDP 调试端口'}
 
-        cdp = CDPClient(ws_url)
-        try:
-            # 开启网络与页面事件
-            cdp.call('Page.enable')
-            cdp.call('Network.enable')
-            cdp.call('Runtime.enable')
-
-            # 注入 fetch/XHR 拦截脚本，保证 100% 捕获 /api/user/checkin 响应体
-            preload_js = r"""
-            try {
-                Object.defineProperty(navigator, 'webdriver', {
-                    get: () => undefined,
-                    configurable: true,
-                });
-            } catch(e) {}
-            window._glados_checkin_result = null;
-
-            function _isCheckinPost(url, method) {
-                if (!url) return false;
-                if (method && String(method).toUpperCase() !== 'POST') return false;
-                try {
-                    const u = new URL(url, window.location.href);
-                    return u.pathname.replace(/\/$/, '') === '/api/user/checkin';
-                } catch(e) {
-                    const s = String(url);
-                    return s.includes('/api/user/checkin') && !s.includes('/challenge');
-                }
-            }
-
-            if (window.fetch) {
-                const _f = window.fetch;
-                window.fetch = async function(...args) {
-                    const resp = await _f.apply(this, args);
-                    try {
-                        const url = (args[0] && args[0].url) || args[0] || '';
-                        const opts = args[1] || (typeof args[0] === 'object' ? args[0] : {});
-                        const method = opts.method || 'GET';
-                        if (_isCheckinPost(url, method)) {
-                            const clone = resp.clone();
-                            clone.text().then(text => {
-                                try {
-                                    const parsed = JSON.parse(text);
-                                    if (!parsed.nonce) {
-                                        window._glados_checkin_result = parsed;
-                                    }
-                                } catch(e) {
-                                    window._glados_checkin_result = { code: 0, message: text };
-                                }
-                            }).catch(() => {});
-                        }
-                    } catch(e) {}
-                    return resp;
-                };
-            }
-            if (window.XMLHttpRequest) {
-                const _XHR = window.XMLHttpRequest;
-                const _origOpen = _XHR.prototype.open;
-                const _origSend = _XHR.prototype.send;
-                _XHR.prototype.open = function(method, url) {
-                    this._glados_method = method;
-                    this._glados_url = url;
-                    return _origOpen.apply(this, arguments);
-                };
-                _XHR.prototype.send = function() {
-                    this.addEventListener('load', function() {
-                        try {
-                            if (_isCheckinPost(this._glados_url, this._glados_method)) {
-                                try {
-                                    const parsed = JSON.parse(this.responseText);
-                                    if (!parsed.nonce) {
-                                        window._glados_checkin_result = parsed;
-                                    }
-                                } catch(e) {
-                                    window._glados_checkin_result = { code: 0, message: this.responseText };
-                                }
-                            }
-                        } catch(e) {}
-                    });
-                    return _origSend.apply(this, arguments);
-                };
-            }
-            """
-            cdp.call('Page.addScriptToEvaluateOnNewDocument', {'source': preload_js})
-
-            for base in DOMAINS:
-                captured = {'json': None}
-                cdp.checkin_request_id = None
-                cdp.checkin_loading_finished = False
-                last_turnstile_click = 0
-                _log(f"📄 正在通过 {base} 打开官方签到页…")
-
-                # 注入该域名的安全会话 Cookie
-                cookies = parse_cookie_header(cookie_header, base)
-                cdp.call('Network.setCookies', {'cookies': cookies})
-
-                # 导航到签到页面
-                cdp.call('Page.navigate', {'url': base + CHECKIN_PAGE_PATH})
-
-                # 循环等待按钮可点击并点击
-                btn_deadline = time.monotonic() + BUTTON_WAIT_SECONDS
-                clicked = False
-                while time.monotonic() < btn_deadline:
-                    # 优先检查是否已有页面自动请求的响应
-                    res = cdp.evaluate(r"""
-                    (() => {
-                        if (window._glados_checkin_result) {
-                            return { status: 'captured', json: window._glados_checkin_result };
-                        }
-                        const btns = Array.from(document.querySelectorAll('button, a, div[role="button"]'));
-                        const btn = btns.find(b => {
-                            const t = (b.textContent || '').trim();
-                            return /check\s*in/i.test(t) || /签到/i.test(t);
-                        });
-                        if (btn) {
-                            if (btn.disabled || btn.getAttribute('aria-disabled') === 'true') {
-                                return { status: 'disabled' };
-                            }
-                            btn.click();
-                            return { status: 'clicked' };
-                        }
-                        return { status: 'waiting' };
-                    })()
-                    """)
-                    if isinstance(res, dict):
-                        if res.get('status') == 'captured' and res.get('json'):
-                            captured['json'] = res['json']
-                            break
-                        if res.get('status') == 'clicked':
-                            clicked = True
-                            _log("🖱️ 点击 Check in，页面将自行完成 Turnstile 验证…")
-                            break
-                    time.sleep(0.5)
-
-                if not clicked and not captured['json']:
-                    last_error = f'{base}: 未找到可点击的 Check in 按钮'
-                    _log(f"⚠️ {last_error}，尝试下一个域名")
-                    continue
-
-                # 等待签到接口响应及 Turnstile 验证完成
-                result_deadline = time.monotonic() + RESULT_WAIT_SECONDS
-                while time.monotonic() < result_deadline and not captured['json']:
-                    cdp.poll_events(timeout=0.3)
-
-                    # 1. 优先通过 CDP Network.responseReceived 获取响应体
-                    if cdp.checkin_request_id:
-                        body_res = cdp.call('Network.getResponseBody', {'requestId': cdp.checkin_request_id})
-                        if body_res and 'result' in body_res and 'body' in body_res['result']:
-                            raw_body = body_res['result']['body']
-                            try:
-                                parsed = json.loads(raw_body)
-                                # 排除 /api/user/checkin/challenge 响应 (包含 nonce/ttl 且无 message)
-                                if isinstance(parsed, dict) and ('nonce' in parsed and 'ttl' in parsed and 'message' not in parsed):
-                                    cdp.checkin_request_id = None
-                                else:
-                                    captured['json'] = parsed
-                                    _log("✅ 通过 CDP 网络事件成功捕获签到接口响应！")
-                                    break
-                            except Exception:
-                                pass
-
-                    # 2. 检查 JavaScript hook (fetch & XHR)
-                    hook_res = cdp.evaluate("window._glados_checkin_result || null")
-                    if isinstance(hook_res, dict) and hook_res:
-                        if 'nonce' in hook_res and 'ttl' in hook_res and 'message' not in hook_res:
-                            pass
-                        else:
-                            captured['json'] = hook_res
-                            _log("✅ 通过页面 JS Hook 成功捕获签到结果！")
-                            break
-
-                    # 3. 检查页面临时弹出的 Toast 浮窗提示（仅限真正包含签到关键词的消息提示）
-                    toast_res = cdp.evaluate(r"""
-                    (() => {
-                        const notices = Array.from(document.querySelectorAll('.ant-message-notice, .ant-message, [role="alert"]'));
-                        for (const n of notices) {
-                            const text = (n.textContent || '').trim();
-                            if (/checkin!\s*got/i.test(text)) {
-                                return { code: 0, message: text };
-                            }
-                            if (/observation logged/i.test(text) || /repeats/i.test(text)) {
-                                return { code: 1, message: text };
-                            }
-                        }
-                        return null;
-                    })()
-                    """)
-                    if isinstance(toast_res, dict) and toast_res:
-                        captured['json'] = toast_res
-                        _log(f"✅ 从页面 Toast 提示捕获签到结果: {toast_res.get('message')}")
-                        break
-
-                    # 4. 检查是否出现需要交互的 Turnstile 验证框并自动点击复选框
-                    turnstile_box = cdp.evaluate(r"""
-                    (() => {
-                        const iframe = document.querySelector('iframe[src*="challenges.cloudflare.com"]')
-                            || document.querySelector('iframe[title*="Cloudflare"]')
-                            || document.querySelector('iframe[src*="turnstile"]');
-                        if (iframe) {
-                            const rect = iframe.getBoundingClientRect();
-                            if (rect.width > 50 && rect.height > 30) {
-                                return {
-                                    x: Math.round(rect.left + 30),
-                                    y: Math.round(rect.top + rect.height / 2)
-                                };
-                            }
-                        }
-                        return null;
-                    })()
-                    """)
-                    if isinstance(turnstile_box, dict) and 'x' in turnstile_box and 'y' in turnstile_box:
-                        now = time.monotonic()
-                        if now - last_turnstile_click > 5.0:
-                            last_turnstile_click = now
-                            _log("🖱️ 检测到 Cloudflare Turnstile 验证框，尝试模拟点击复选框…")
-                            tx, ty = turnstile_box['x'], turnstile_box['y']
-                            cdp.call('Input.dispatchMouseEvent', {'type': 'mouseMoved', 'x': tx, 'y': ty})
-                            cdp.call('Input.dispatchMouseEvent', {'type': 'mousePressed', 'x': tx, 'y': ty, 'button': 'left', 'clickCount': 1})
-                            cdp.call('Input.dispatchMouseEvent', {'type': 'mouseReleased', 'x': tx, 'y': ty, 'button': 'left', 'clickCount': 1})
-
-                    time.sleep(0.5)
-
-                result = captured['json']
-                if not result:
-                    try:
-                        snap = cdp.call('Page.captureScreenshot', {'format': 'png'})
-                        if snap and 'result' in snap and 'data' in snap['result']:
-                            netloc = urlsplit(base).netloc.replace(':', '_')
-                            snap_path = os.path.join('logs', f'browser_checkin_timeout_{netloc}.png')
-                            with open(snap_path, 'wb') as f:
-                                f.write(base64.b64decode(snap['result']['data']))
-                            _log(f"⚠️ 等待验证超时（截图已存 {snap_path}）")
-                    except Exception:
-                        pass
-                    last_error = f'{base}: 等待 Turnstile 验证或签到响应超时 ({RESULT_WAIT_SECONDS}s)'
-                    _log(f"⚠️ {last_error}，尝试下一个域名")
-                    continue
-
-                if result:
-                    if isinstance(result, dict) and result.get('reason') == 'turnstile':
-                        try:
-                            snap = cdp.call('Page.captureScreenshot', {'format': 'png'})
-                            if snap and 'result' in snap and 'data' in snap['result']:
-                                with open(os.path.join('logs', 'browser_checkin_turnstile.png'), 'wb') as f:
-                                    f.write(base64.b64decode(snap['result']['data']))
-                        except Exception:
-                            pass
-                        _log("⚠️ 服务端仍要求 Turnstile（截图已存 logs/browser_checkin_turnstile.png）")
-                    return result
-        finally:
-            cdp.close()
+        return _run_cdp_session(ws_url, cookie_header, user_agent=user_agent)
     except Exception as e:
-        last_error = str(e)
         _log(f"⚠️ 浏览器签到异常: {e}")
+        return {'request_failed': True, 'reason': 'browser-checkin-failed',
+                'detail': str(e)}
     finally:
         try:
             proc.terminate()
@@ -688,8 +739,26 @@ def _try_domains_cdp(browser_path, cookie_header, headless, user_agent=None):
             except Exception:
                 pass
 
-    return {'request_failed': True, 'reason': 'browser-checkin-failed',
-            'detail': str(last_error or '所有域名均未完成签到')}
+
+def _try_remote_cdp(cdp_url, cookie_header, user_agent=None):
+    """连接到用户自定义配置的 CDP 服务端点（如 http://127.0.0.1:9222 或 ws://...）执行签到。"""
+    _log(f"🌐 正在连接自定义 CDP 服务: {cdp_url}")
+    try:
+        ws_url, cleanup = resolve_cdp_url(cdp_url)
+    except Exception as e:
+        _log(f"⚠️ 解析自定义 CDP 地址失败: {e}")
+        return {'request_failed': True, 'reason': 'browser-checkin-failed',
+                'detail': f'解析自定义 CDP 地址失败: {e}'}
+
+    try:
+        return _run_cdp_session(ws_url, cookie_header, user_agent=user_agent)
+    except Exception as e:
+        _log(f"⚠️ 自定义 CDP 服务签到异常: {e}")
+        return {'request_failed': True, 'reason': 'browser-checkin-failed',
+                'detail': str(e)}
+    finally:
+        if cleanup:
+            cleanup()
 
 
 def _pick_context(pw, headless, user_agent=None):
@@ -831,6 +900,19 @@ def browser_checkin(cookie_header, user_agent, domains=None):
         headless = not has_display
         if headless:
             _log("⚠️ 未检测到图形桌面（DISPLAY/WAYLAND_DISPLAY），自动切换至无头模式（headless）")
+
+    # 0. 优先检测是否配置了自定义 CDP 地址（GLADOS_CDP_URL，如 http://127.0.0.1:9222 或 ws://...）
+    cdp_url = os.environ.get('GLADOS_CDP_URL', '').strip()
+    if cdp_url:
+        initial_ua = user_agent if (_PREFER_CONFIGURED_UA and user_agent) else None
+        result = _try_remote_cdp(cdp_url, cookie_header, user_agent=initial_ua)
+        if (isinstance(result, dict) and user_agent
+                and result.get('reason') in ('device-mismatch', 'http-auth-rejected')):
+            _PREFER_CONFIGURED_UA = True
+            if initial_ua is None:
+                _log("🔄 服务端判定设备不一致，改用配置的 User-Agent 重试…")
+                result = _try_remote_cdp(cdp_url, cookie_header, user_agent=user_agent)
+        return result
 
     # 1. 优先使用系统原生浏览器（Edge/Chrome）+ 原生 CDP 通道
     browser_path = find_browser_executable()

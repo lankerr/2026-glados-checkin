@@ -34,8 +34,11 @@ if sys.platform.startswith('win'):
 # 域名优先级：Cloud 第一
 DOMAINS = [
     "https://glados.cloud",
-    "https://glados.rocks", 
+    "https://glados.rocks",
     "https://glados.network",
+    "https://glados.space",
+    # 旧域名留作最后回退（2026-11-17 实测仍在线）
+    "https://glados.one",
 ]
 
 DEFAULT_USER_AGENT = (

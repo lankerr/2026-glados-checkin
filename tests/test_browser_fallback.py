@@ -163,5 +163,22 @@ class BrowserDetectionTests(unittest.TestCase):
             )
 
 
+class CDPEndpointTests(unittest.TestCase):
+    def test_ws_url_returned_directly(self):
+        ws_url, cleanup = browser_checkin.resolve_cdp_url('ws://127.0.0.1:9222/devtools/page/abc')
+        self.assertEqual(ws_url, 'ws://127.0.0.1:9222/devtools/page/abc')
+        self.assertIsNone(cleanup)
+
+    def test_http_url_discovers_page(self):
+        fake_response = mock.MagicMock()
+        fake_response.read.return_value = b'[{"type": "page", "webSocketDebuggerUrl": "ws://127.0.0.1:9222/page1"}]'
+        fake_response.__enter__.return_value = fake_response
+        fake_response.__exit__.return_value = False
+
+        with mock.patch('urllib.request.urlopen', return_value=fake_response):
+            ws_url, cleanup = browser_checkin.resolve_cdp_url('http://127.0.0.1:9222')
+            self.assertEqual(ws_url, 'ws://127.0.0.1:9222/page1')
+
+
 if __name__ == '__main__':
     unittest.main()
