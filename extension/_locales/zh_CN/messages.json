@@ -130,5 +130,43 @@
   "timeoutNoButton": {
     "message": "超时：未找到 Check in 按钮",
     "description": "页面超时未找到签到按钮"
+  },
+  "bgHint": {
+    "message": "关窗口后仍可到点签到：地址栏打开 $URL$，启用「$TOGGLE$」。点窗口 X 即可；托盘选「退出」、睡眠、关机或结束进程后不会签。",
+    "description": "弹出页后台运行说明，带设置地址和开关名称",
+    "placeholders": {
+      "url": {
+        "content": "$1",
+        "example": "chrome://settings/system"
+      },
+      "toggle": {
+        "content": "$2",
+        "example": "关闭 Google Chrome 后继续运行后台应用"
+      }
+    }
+  },
+  "toggleNameChrome": {
+    "message": "关闭 Google Chrome 后继续运行后台应用",
+    "description": "Chrome 后台应用开关名称"
+  },
+  "toggleNameEdge": {
+    "message": "关闭 Microsoft Edge 后继续运行后台扩展和应用程序",
+    "description": "Edge 后台扩展开关名称"
+  },
+  "btnCopySettings": {
+    "message": "复制设置地址",
+    "description": "复制 chrome:// 或 edge:// 设置地址"
+  },
+  "btnCopied": {
+    "message": "已复制",
+    "description": "复制成功后的按钮文案"
+  },
+  "notifyBgTitle": {
+    "message": "请开启后台运行",
+    "description": "首次安装时后台开关提醒标题"
+  },
+  "notifyBgMessage": {
+    "message": "关窗口后要继续自动签到，请在系统设置里打开「关闭浏览器后继续运行后台应用」。点窗口 X 可以，托盘「退出」会停掉扩展。",
+    "description": "首次安装时后台开关提醒正文"
   }
 }

@@ -6,6 +6,7 @@
 //  - 已在别处签到（本地脚本/手动）会先被流水识别，扩展不再开页
 //  - 徽章 = 连续自动入账天数（与仓库 README 战报同口径）
 //  - 签到由官方页面自身完成验证，扩展只负责开页、点击与读取结果
+//  - 关窗口仍可签：依赖浏览器「关闭后继续运行后台应用」；彻底退出/睡眠/关机不会跑
 
 const ORIGIN = 'https://glados.cloud';
 const FALLBACK_ORIGINS = ['https://glados.rocks'];
@@ -119,13 +120,17 @@ async function runSlot(reason) {
   chrome.tabs.create({ url: ORIGIN + '/console/checkin#glados-auto', active: false });
 }
 
-chrome.runtime.onInstalled.addListener(() => {
+chrome.runtime.onInstalled.addListener((details) => {
   for (const slot of SLOTS) {
     const [h, m] = slot.split(':').map(Number);
     const when = new Date(AlarmsUtc(h, m)).getTime();
     chrome.alarms.create('slot-' + slot, { when, periodInMinutes: 24 * 60 });
   }
   runSlot('installed');
+  // 扩展无法代开系统开关；仅首次安装提醒开启「关窗口后继续运行后台应用」
+  if (details.reason === 'install') {
+    notify('bg-hint', t('notifyBgTitle'), t('notifyBgMessage'));
+  }
 });
 function AlarmsUtc(h, m) {
   // 把北京时间 h:m 换算成 UTC 的下一个触发时刻

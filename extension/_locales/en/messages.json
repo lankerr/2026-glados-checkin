@@ -130,5 +130,43 @@
   "timeoutNoButton": {
     "message": "Timed out: Check in button not found",
     "description": "Check-in button timeout"
+  },
+  "bgHint": {
+    "message": "Check-in can still run after you close windows: open $URL$ and enable \"$TOGGLE$\". Clicking the window X is fine; Exit from the tray, sleep, shutdown, or killing the process will stop it.",
+    "description": "Popup background-running hint with settings URL and toggle name",
+    "placeholders": {
+      "url": {
+        "content": "$1",
+        "example": "chrome://settings/system"
+      },
+      "toggle": {
+        "content": "$2",
+        "example": "Continue running background apps when Google Chrome is closed"
+      }
+    }
+  },
+  "toggleNameChrome": {
+    "message": "Continue running background apps when Google Chrome is closed",
+    "description": "Chrome background apps toggle name"
+  },
+  "toggleNameEdge": {
+    "message": "Continue running background extensions and apps when Microsoft Edge is closed",
+    "description": "Edge background extensions toggle name"
+  },
+  "btnCopySettings": {
+    "message": "Copy settings URL",
+    "description": "Copy chrome:// or edge:// settings URL"
+  },
+  "btnCopied": {
+    "message": "Copied",
+    "description": "Copy success button label"
+  },
+  "notifyBgTitle": {
+    "message": "Enable background running",
+    "description": "First-install reminder title for the background toggle"
+  },
+  "notifyBgMessage": {
+    "message": "To keep auto check-in after closing windows, turn on “Continue running background apps when the browser is closed” in system settings. Clicking the window X is fine; Exit from the tray stops the extension.",
+    "description": "First-install reminder body for the background toggle"
   }
 }
