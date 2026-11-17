@@ -58,6 +58,12 @@ in
       default = null;
       description = "Optional browser package (e.g. pkgs.microsoft-edge) to provide in PATH for Turnstile verification fallback.";
     };
+
+    cdpUrl = mkOption {
+      type = types.nullOr types.str;
+      default = null;
+      description = "Custom CDP (Chrome DevTools Protocol) endpoint URL (e.g. http://127.0.0.1:9222 or ws://...).";
+    };
   };
 
   config = mkIf cfg.enable {
@@ -82,6 +88,9 @@ in
       })
       // (optionalAttrs (cfg.serverchanSendkey != null) {
         SERVERCHAN_SENDKEY = cfg.serverchanSendkey;
+      })
+      // (optionalAttrs (cfg.cdpUrl != null) {
+        GLADOS_CDP_URL = cfg.cdpUrl;
       });
 
       serviceConfig = {
