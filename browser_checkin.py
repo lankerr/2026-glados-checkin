@@ -304,11 +304,20 @@ class CDPClient:
             return
         method = data.get('method', '')
         params = data.get('params', {})
-        if method == 'Network.responseReceived':
+        if method == 'Network.requestWillBeSent':
+            req = params.get('request', {})
+            req_method = req.get('method', '').upper()
+            url = req.get('url', '')
+            path = urlsplit(url).path.rstrip('/')
+            if path == '/api/user/checkin' and req_method == 'POST':
+                self.checkin_request_id = params.get('requestId')
+        elif method == 'Network.responseReceived':
             resp = params.get('response', {})
             url = resp.get('url', '')
-            if '/api/user/checkin' in url:
-                self.checkin_request_id = params.get('requestId')
+            path = urlsplit(url).path.rstrip('/')
+            if path == '/api/user/checkin':
+                if not self.checkin_request_id:
+                    self.checkin_request_id = params.get('requestId')
         elif method == 'Network.loadingFinished':
             if params.get('requestId') == self.checkin_request_id:
                 self.checkin_loading_finished = True
@@ -424,7 +433,7 @@ def _try_domains_cdp(browser_path, cookie_header, headless, user_agent=None):
             cdp.call('Runtime.enable')
 
             # 注入 fetch/XHR 拦截脚本，保证 100% 捕获 /api/user/checkin 响应体
-            preload_js = """
+            preload_js = r"""
             try {
                 Object.defineProperty(navigator, 'webdriver', {
                     get: () => undefined,
@@ -432,17 +441,38 @@ def _try_domains_cdp(browser_path, cookie_header, headless, user_agent=None):
                 });
             } catch(e) {}
             window._glados_checkin_result = null;
+
+            function _isCheckinPost(url, method) {
+                if (!url) return false;
+                if (method && String(method).toUpperCase() !== 'POST') return false;
+                try {
+                    const u = new URL(url, window.location.href);
+                    return u.pathname.replace(/\/$/, '') === '/api/user/checkin';
+                } catch(e) {
+                    const s = String(url);
+                    return s.includes('/api/user/checkin') && !s.includes('/challenge');
+                }
+            }
+
             if (window.fetch) {
                 const _f = window.fetch;
                 window.fetch = async function(...args) {
                     const resp = await _f.apply(this, args);
                     try {
                         const url = (args[0] && args[0].url) || args[0] || '';
-                        if (typeof url === 'string' && url.includes('/api/user/checkin')) {
+                        const opts = args[1] || (typeof args[0] === 'object' ? args[0] : {});
+                        const method = opts.method || 'GET';
+                        if (_isCheckinPost(url, method)) {
                             const clone = resp.clone();
                             clone.text().then(text => {
-                                try { window._glados_checkin_result = JSON.parse(text); }
-                                catch(e) { window._glados_checkin_result = { code: 0, message: text }; }
+                                try {
+                                    const parsed = JSON.parse(text);
+                                    if (!parsed.nonce) {
+                                        window._glados_checkin_result = parsed;
+                                    }
+                                } catch(e) {
+                                    window._glados_checkin_result = { code: 0, message: text };
+                                }
                             }).catch(() => {});
                         }
                     } catch(e) {}
@@ -454,15 +484,19 @@ def _try_domains_cdp(browser_path, cookie_header, headless, user_agent=None):
                 const _origOpen = _XHR.prototype.open;
                 const _origSend = _XHR.prototype.send;
                 _XHR.prototype.open = function(method, url) {
+                    this._glados_method = method;
                     this._glados_url = url;
                     return _origOpen.apply(this, arguments);
                 };
                 _XHR.prototype.send = function() {
                     this.addEventListener('load', function() {
                         try {
-                            if (this._glados_url && String(this._glados_url).includes('/api/user/checkin')) {
+                            if (_isCheckinPost(this._glados_url, this._glados_method)) {
                                 try {
-                                    window._glados_checkin_result = JSON.parse(this.responseText);
+                                    const parsed = JSON.parse(this.responseText);
+                                    if (!parsed.nonce) {
+                                        window._glados_checkin_result = parsed;
+                                    }
                                 } catch(e) {
                                     window._glados_checkin_result = { code: 0, message: this.responseText };
                                 }
@@ -540,18 +574,26 @@ def _try_domains_cdp(browser_path, cookie_header, headless, user_agent=None):
                         if body_res and 'result' in body_res and 'body' in body_res['result']:
                             raw_body = body_res['result']['body']
                             try:
-                                captured['json'] = json.loads(raw_body)
-                                _log("✅ 通过 CDP 网络事件成功捕获签到接口响应！")
-                                break
+                                parsed = json.loads(raw_body)
+                                # 排除 /api/user/checkin/challenge 响应 (包含 nonce/ttl 且无 message)
+                                if isinstance(parsed, dict) and ('nonce' in parsed and 'ttl' in parsed and 'message' not in parsed):
+                                    cdp.checkin_request_id = None
+                                else:
+                                    captured['json'] = parsed
+                                    _log("✅ 通过 CDP 网络事件成功捕获签到接口响应！")
+                                    break
                             except Exception:
                                 pass
 
                     # 2. 检查 JavaScript hook (fetch & XHR)
                     hook_res = cdp.evaluate("window._glados_checkin_result || null")
                     if isinstance(hook_res, dict) and hook_res:
-                        captured['json'] = hook_res
-                        _log("✅ 通过页面 JS Hook 成功捕获签到结果！")
-                        break
+                        if 'nonce' in hook_res and 'ttl' in hook_res and 'message' not in hook_res:
+                            pass
+                        else:
+                            captured['json'] = hook_res
+                            _log("✅ 通过页面 JS Hook 成功捕获签到结果！")
+                            break
 
                     # 3. 检查页面临时弹出的 Toast 浮窗提示（仅限真正包含签到关键词的消息提示）
                     toast_res = cdp.evaluate(r"""
@@ -686,11 +728,14 @@ def _try_domains_playwright(context, cookie_header):
 
         def on_response(resp, _base=base):
             try:
-                if (resp.url.startswith(_base) and '/api/user/checkin' in resp.url
+                path = urlsplit(resp.url).path.rstrip('/')
+                if (resp.url.startswith(_base) and path == '/api/user/checkin'
                         and resp.request.method == 'POST'):
                     body = resp.text()
                     try:
-                        captured['json'] = json.loads(body)
+                        parsed = json.loads(body)
+                        if not ('nonce' in parsed and 'ttl' in parsed and 'message' not in parsed):
+                            captured['json'] = parsed
                     except ValueError:
                         captured['json'] = {'request_failed': True,
                                             'reason': 'browser-checkin-invalid-json'}
@@ -728,7 +773,7 @@ def _try_domains_playwright(context, cookie_header):
 
             _log("🖱️ 点击 Check in，页面将自行完成 Turnstile 验证…")
             with page.expect_response(lambda r: r.url.startswith(base)
-                                      and '/api/user/checkin' in r.url
+                                      and urlsplit(r.url).path.rstrip('/') == '/api/user/checkin'
                                       and r.request.method == 'POST',
                                       timeout=RESULT_WAIT_SECONDS * 1000) as resp_info:
                 btn.click()
