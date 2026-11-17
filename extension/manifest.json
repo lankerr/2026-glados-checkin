@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "GLaDOS Check-in (community)",
+  "name": "__MSG_extName__",
   "version": "0.1.0",
-  "description": "零配置自动签到：用你自己的浏览器登录态；三时段幂等调度；徽章实时显示连续入账天数",
+  "description": "__MSG_extDescription__",
   "default_locale": "zh_CN",
   "permissions": ["alarms", "storage", "notifications"],
   "host_permissions": [
@@ -15,7 +15,7 @@
   "background": { "service_worker": "background.js" },
   "action": {
     "default_popup": "popup.html",
-    "default_title": "GLaDOS Check-in"
+    "default_title": "__MSG_actionTitle__"
   },
   "content_scripts": [
     {

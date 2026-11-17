@@ -1,0 +1,172 @@
+{
+  "extName": {
+    "message": "GLaDOS Check-in (community)",
+    "description": "扩展名称"
+  },
+  "extDescription": {
+    "message": "零配置自动签到：用你自己的浏览器登录态；三时段幂等调度；徽章实时显示连续入账天数",
+    "description": "扩展描述"
+  },
+  "actionTitle": {
+    "message": "GLaDOS Check-in",
+    "description": "工具栏按钮默认标题"
+  },
+  "htmlLang": {
+    "message": "zh-CN",
+    "description": "弹出页 html lang"
+  },
+  "popupTitle": {
+    "message": "🎁 GLaDOS Check-in",
+    "description": "弹出页标题"
+  },
+  "labelStreak": {
+    "message": "🔥 连续入账",
+    "description": "连续入账标签"
+  },
+  "labelToday": {
+    "message": "✅ 今日状态",
+    "description": "今日状态标签"
+  },
+  "labelPoints": {
+    "message": "💰 当前积分",
+    "description": "当前积分标签"
+  },
+  "labelSlots": {
+    "message": "⏰ 每日时段",
+    "description": "每日时段标签"
+  },
+  "slotsValue": {
+    "message": "09:30 / 12:30 / 20:30",
+    "description": "三个签到时段"
+  },
+  "btnCheckin": {
+    "message": "立即签到",
+    "description": "手动签到按钮"
+  },
+  "popupNote": {
+    "message": "零配置：用浏览器自身登录态。已在别处签到时扩展自动跳过。签到由官方页面完成人机验证。",
+    "description": "弹出页底部说明"
+  },
+  "streakDays": {
+    "message": "$COUNT$ 天（$DATE$）",
+    "description": "连续入账天数展示",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "7"
+      },
+      "date": {
+        "content": "$2",
+        "example": "2026-11-17"
+      }
+    }
+  },
+  "streakNone": {
+    "message": "暂无",
+    "description": "尚无连续入账记录"
+  },
+  "todayDone": {
+    "message": "已完成 ✅",
+    "description": "今日已签到"
+  },
+  "todayPending": {
+    "message": "待签到",
+    "description": "今日未签到"
+  },
+  "loginRequired": {
+    "message": "请先登录 glados.cloud",
+    "description": "未登录时的积分占位"
+  },
+  "btnRunning": {
+    "message": "已触发，签完自动关页…",
+    "description": "手动签到进行中"
+  },
+  "badgeTitle": {
+    "message": "GLaDOS Check-in — 连续入账 $COUNT$ 天",
+    "description": "工具栏徽章悬停标题",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "7"
+      }
+    }
+  },
+  "notifyNetTitle": {
+    "message": "GLaDOS 签到",
+    "description": "流水读取失败通知标题"
+  },
+  "notifyNetMessage": {
+    "message": "积分流水读取失败，下个时段自动重试",
+    "description": "流水读取失败通知正文"
+  },
+  "notifyDoneTitle": {
+    "message": "GLaDOS 签到成功",
+    "description": "签到成功通知标题"
+  },
+  "notifyDoneFallback": {
+    "message": "已完成",
+    "description": "签到成功但接口无 message 时的兜底"
+  },
+  "notifyFailTitle": {
+    "message": "GLaDOS 签到未通过",
+    "description": "签到失败通知标题"
+  },
+  "notifyFailFallback": {
+    "message": "下个时段自动重试",
+    "description": "签到失败兜底正文"
+  },
+  "notifyLoginTitle": {
+    "message": "请先登录 GLaDOS",
+    "description": "未登录通知标题"
+  },
+  "notifyLoginMessage": {
+    "message": "扩展使用浏览器自身登录态，请先登录 glados.cloud",
+    "description": "未登录通知正文"
+  },
+  "parseError": {
+    "message": "响应解析失败",
+    "description": "签到接口响应无法解析"
+  },
+  "timeoutNoButton": {
+    "message": "超时：未找到 Check in 按钮",
+    "description": "页面超时未找到签到按钮"
+  },
+  "bgHint": {
+    "message": "关窗口后仍可到点签到：地址栏打开 $URL$，启用「$TOGGLE$」。点窗口 X 即可；托盘选「退出」、睡眠、关机或结束进程后不会签。",
+    "description": "弹出页后台运行说明，带设置地址和开关名称",
+    "placeholders": {
+      "url": {
+        "content": "$1",
+        "example": "chrome://settings/system"
+      },
+      "toggle": {
+        "content": "$2",
+        "example": "关闭 Google Chrome 后继续运行后台应用"
+      }
+    }
+  },
+  "toggleNameChrome": {
+    "message": "关闭 Google Chrome 后继续运行后台应用",
+    "description": "Chrome 后台应用开关名称"
+  },
+  "toggleNameEdge": {
+    "message": "关闭 Microsoft Edge 后继续运行后台扩展和应用程序",
+    "description": "Edge 后台扩展开关名称"
+  },
+  "btnCopySettings": {
+    "message": "复制设置地址",
+    "description": "复制 chrome:// 或 edge:// 设置地址"
+  },
+  "btnCopied": {
+    "message": "已复制",
+    "description": "复制成功后的按钮文案"
+  },
+  "notifyBgTitle": {
+    "message": "请开启后台运行",
+    "description": "首次安装时后台开关提醒标题"
+  },
+  "notifyBgMessage": {
+    "message": "关窗口后要继续自动签到，请在系统设置里打开「关闭浏览器后继续运行后台应用」。点窗口 X 可以，托盘「退出」会停掉扩展。",
+    "description": "首次安装时后台开关提醒正文"
+  }
+}

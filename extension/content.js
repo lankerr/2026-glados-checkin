@@ -3,6 +3,8 @@
 
 (() => {
   if (!location.hash.includes('glados-auto')) return;
+  // 读取 _locales 文案，供签到失败时的上报信息使用
+  const t = (key) => chrome.i18n.getMessage(key);
 
   const send = (payload) => {
     try { chrome.runtime.sendMessage(payload); } catch (e) { /* 扩展重载中 */ }
@@ -25,7 +27,7 @@
     if (this._gladosUrl && this._gladosUrl.includes('/api/user/checkin')) {
       this.addEventListener('load', () => {
         try { send({ type: 'checkin-result', result: JSON.parse(this.responseText) }); }
-        catch (e) { send({ type: 'checkin-result', result: { code: -1, message: '响应解析失败' } }); }
+        catch (e) { send({ type: 'checkin-result', result: { code: -1, message: t('parseError') } }); }
       });
     }
     return origSend.call(this, body);
@@ -49,7 +51,7 @@
   const timer = setInterval(() => {
     if (Date.now() > deadline + 90000) {
       clearInterval(timer);
-      send({ type: 'checkin-result', result: { code: -1, message: '超时：未找到 Check in 按钮' } });
+      send({ type: 'checkin-result', result: { code: -1, message: t('timeoutNoButton') } });
       return;
     }
     const btn = findButton();

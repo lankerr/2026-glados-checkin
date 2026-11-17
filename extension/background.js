@@ -6,11 +6,14 @@
 //  - 已在别处签到（本地脚本/手动）会先被流水识别，扩展不再开页
 //  - 徽章 = 连续自动入账天数（与仓库 README 战报同口径）
 //  - 签到由官方页面自身完成验证，扩展只负责开页、点击与读取结果
+//  - 关窗口仍可签：依赖浏览器「关闭后继续运行后台应用」；彻底退出/睡眠/关机不会跑
 
 const ORIGIN = 'https://glados.cloud';
 const FALLBACK_ORIGINS = ['https://glados.rocks'];
 const SLOTS = ['09:30', '12:30', '20:30'];
 const STATE_KEY = 'gladosState';
+// 读取 _locales 文案；substitutions 对应 messages.json 中的 $1/$2 占位符
+const t = (key, substitutions) => chrome.i18n.getMessage(key, substitutions);
 
 function bjNow() {
   // 北京时间（UTC+8）的 Date 值
@@ -88,7 +91,7 @@ async function updateBadge(streak) {
   const text = s.count > 0 ? String(s.count) : '';
   await chrome.action.setBadgeText({ text });
   await chrome.action.setBadgeBackgroundColor({ color: '#e377c2' });
-  await chrome.action.setTitle({ title: `GLaDOS Check-in — 连续入账 ${s.count} 天` });
+  await chrome.action.setTitle({ title: t('badgeTitle', [String(s.count)]) });
 }
 
 function notify(id, title, message) {
@@ -105,7 +108,7 @@ async function runSlot(reason) {
   const today = bjToday();
   const ledger = await readLedger();
   if (!ledger) {
-    notify('net', 'GLaDOS 签到', '积分流水读取失败，下个时段自动重试');
+    notify('net', t('notifyNetTitle'), t('notifyNetMessage'));
     return;
   }
   await advanceStreak(ledger);
@@ -117,13 +120,17 @@ async function runSlot(reason) {
   chrome.tabs.create({ url: ORIGIN + '/console/checkin#glados-auto', active: false });
 }
 
-chrome.runtime.onInstalled.addListener(() => {
+chrome.runtime.onInstalled.addListener((details) => {
   for (const slot of SLOTS) {
     const [h, m] = slot.split(':').map(Number);
     const when = new Date(AlarmsUtc(h, m)).getTime();
     chrome.alarms.create('slot-' + slot, { when, periodInMinutes: 24 * 60 });
   }
   runSlot('installed');
+  // 扩展无法代开系统开关；仅首次安装提醒开启「关窗口后继续运行后台应用」
+  if (details.reason === 'install') {
+    notify('bg-hint', t('notifyBgTitle'), t('notifyBgMessage'));
+  }
 });
 function AlarmsUtc(h, m) {
   // 把北京时间 h:m 换算成 UTC 的下一个触发时刻
@@ -147,14 +154,14 @@ chrome.runtime.onMessage.addListener((msg, sender, respond) => {
         const ledger = await readLedger();
         if (ledger) { await advanceStreak(ledger); }
         await updateBadge();
-        notify('done', 'GLaDOS 签到成功', String(r.message || '已完成'));
+        notify('done', t('notifyDoneTitle'), String(r.message || t('notifyDoneFallback')));
       } else {
-        notify('fail', 'GLaDOS 签到未通过', String(r.message || '下个时段自动重试'));
+        notify('fail', t('notifyFailTitle'), String(r.message || t('notifyFailFallback')));
       }
       if (sender.tab) chrome.tabs.remove(sender.tab.id).catch(() => {});
       respond({ ok: true });
     } else if (msg.type === 'need-login') {
-      notify('login', '请先登录 GLaDOS', '扩展使用浏览器自身登录态，请先登录 glados.cloud');
+      notify('login', t('notifyLoginTitle'), t('notifyLoginMessage'));
       if (sender.tab) chrome.tabs.remove(sender.tab.id).catch(() => {});
       respond({ ok: true });
     } else if (msg.type === 'manual-run') {

@@ -1,0 +1,172 @@
+{
+  "extName": {
+    "message": "GLaDOS Check-in (community)",
+    "description": "Extension name"
+  },
+  "extDescription": {
+    "message": "Zero-config auto check-in using your browser session; three daily slots; the badge shows consecutive credit days",
+    "description": "Extension description"
+  },
+  "actionTitle": {
+    "message": "GLaDOS Check-in",
+    "description": "Toolbar button default title"
+  },
+  "htmlLang": {
+    "message": "en",
+    "description": "Popup html lang"
+  },
+  "popupTitle": {
+    "message": "🎁 GLaDOS Check-in",
+    "description": "Popup title"
+  },
+  "labelStreak": {
+    "message": "🔥 Consecutive credits",
+    "description": "Streak label"
+  },
+  "labelToday": {
+    "message": "✅ Today's status",
+    "description": "Today status label"
+  },
+  "labelPoints": {
+    "message": "💰 Current points",
+    "description": "Current points label"
+  },
+  "labelSlots": {
+    "message": "⏰ Daily slots",
+    "description": "Daily slots label"
+  },
+  "slotsValue": {
+    "message": "09:30 / 12:30 / 20:30",
+    "description": "Three check-in slots"
+  },
+  "btnCheckin": {
+    "message": "Check in now",
+    "description": "Manual check-in button"
+  },
+  "popupNote": {
+    "message": "Zero-config: uses your browser session. Skips automatically if already checked in elsewhere. The official page completes human verification.",
+    "description": "Popup footer note"
+  },
+  "streakDays": {
+    "message": "$COUNT$ days ($DATE$)",
+    "description": "Streak display",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "7"
+      },
+      "date": {
+        "content": "$2",
+        "example": "2026-11-17"
+      }
+    }
+  },
+  "streakNone": {
+    "message": "None yet",
+    "description": "No streak yet"
+  },
+  "todayDone": {
+    "message": "Done ✅",
+    "description": "Already checked in today"
+  },
+  "todayPending": {
+    "message": "Pending",
+    "description": "Not checked in today"
+  },
+  "loginRequired": {
+    "message": "Please log in to glados.cloud first",
+    "description": "Points placeholder when logged out"
+  },
+  "btnRunning": {
+    "message": "Triggered, page will close after check-in…",
+    "description": "Manual check-in in progress"
+  },
+  "badgeTitle": {
+    "message": "GLaDOS Check-in — $COUNT$ consecutive credit days",
+    "description": "Toolbar badge tooltip",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "7"
+      }
+    }
+  },
+  "notifyNetTitle": {
+    "message": "GLaDOS check-in",
+    "description": "Ledger read failure title"
+  },
+  "notifyNetMessage": {
+    "message": "Failed to read points history; will retry at the next slot",
+    "description": "Ledger read failure body"
+  },
+  "notifyDoneTitle": {
+    "message": "GLaDOS check-in succeeded",
+    "description": "Success notification title"
+  },
+  "notifyDoneFallback": {
+    "message": "Completed",
+    "description": "Success fallback body"
+  },
+  "notifyFailTitle": {
+    "message": "GLaDOS check-in did not pass",
+    "description": "Failure notification title"
+  },
+  "notifyFailFallback": {
+    "message": "Will retry at the next slot",
+    "description": "Failure fallback body"
+  },
+  "notifyLoginTitle": {
+    "message": "Please log in to GLaDOS first",
+    "description": "Login required title"
+  },
+  "notifyLoginMessage": {
+    "message": "This extension uses your browser session. Please log in to glados.cloud first.",
+    "description": "Login required body"
+  },
+  "parseError": {
+    "message": "Failed to parse the response",
+    "description": "Check-in response parse error"
+  },
+  "timeoutNoButton": {
+    "message": "Timed out: Check in button not found",
+    "description": "Check-in button timeout"
+  },
+  "bgHint": {
+    "message": "Check-in can still run after you close windows: open $URL$ and enable \"$TOGGLE$\". Clicking the window X is fine; Exit from the tray, sleep, shutdown, or killing the process will stop it.",
+    "description": "Popup background-running hint with settings URL and toggle name",
+    "placeholders": {
+      "url": {
+        "content": "$1",
+        "example": "chrome://settings/system"
+      },
+      "toggle": {
+        "content": "$2",
+        "example": "Continue running background apps when Google Chrome is closed"
+      }
+    }
+  },
+  "toggleNameChrome": {
+    "message": "Continue running background apps when Google Chrome is closed",
+    "description": "Chrome background apps toggle name"
+  },
+  "toggleNameEdge": {
+    "message": "Continue running background extensions and apps when Microsoft Edge is closed",
+    "description": "Edge background extensions toggle name"
+  },
+  "btnCopySettings": {
+    "message": "Copy settings URL",
+    "description": "Copy chrome:// or edge:// settings URL"
+  },
+  "btnCopied": {
+    "message": "Copied",
+    "description": "Copy success button label"
+  },
+  "notifyBgTitle": {
+    "message": "Enable background running",
+    "description": "First-install reminder title for the background toggle"
+  },
+  "notifyBgMessage": {
+    "message": "To keep auto check-in after closing windows, turn on “Continue running background apps when the browser is closed” in system settings. Clicking the window X is fine; Exit from the tray stops the extension.",
+    "description": "First-install reminder body for the background toggle"
+  }
+}
