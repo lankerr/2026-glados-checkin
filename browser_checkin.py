@@ -297,6 +297,7 @@ class CDPClient:
         self.ws = SimpleWebSocket(ws_url)
         self._msg_id = 0
         self.checkin_request_id = None
+        self.checkin_loading_finished = False
 
     def _handle_event(self, data):
         if not isinstance(data, dict):
@@ -308,6 +309,9 @@ class CDPClient:
             url = resp.get('url', '')
             if '/api/user/checkin' in url:
                 self.checkin_request_id = params.get('requestId')
+        elif method == 'Network.loadingFinished':
+            if params.get('requestId') == self.checkin_request_id:
+                self.checkin_loading_finished = True
 
     def poll_events(self, timeout=0.2):
         deadline = time.monotonic() + timeout
@@ -379,8 +383,8 @@ def _try_domains_cdp(browser_path, cookie_header, headless, user_agent=None):
         '--no-default-browser-check',
         '--disable-blink-features=AutomationControlled',
         '--disable-features=TranslateUI',
+        '--window-size=1920,1080',
         '--lang=zh-CN',
-        'about:blank',
     ]
     if hasattr(os, 'geteuid') and os.geteuid() == 0:
         args.append('--no-sandbox')
@@ -388,6 +392,7 @@ def _try_domains_cdp(browser_path, cookie_header, headless, user_agent=None):
         args.append('--headless=new')
     if user_agent:
         args.append(f'--user-agent={user_agent}')
+    args.append('about:blank')
 
     _log(f"🚀 启动系统浏览器: {os.path.basename(browser_path)} (headless={headless})")
     proc = subprocess.Popen(args, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -420,6 +425,12 @@ def _try_domains_cdp(browser_path, cookie_header, headless, user_agent=None):
 
             # 注入 fetch/XHR 拦截脚本，保证 100% 捕获 /api/user/checkin 响应体
             preload_js = """
+            try {
+                Object.defineProperty(navigator, 'webdriver', {
+                    get: () => undefined,
+                    configurable: true,
+                });
+            } catch(e) {}
             window._glados_checkin_result = null;
             if (window.fetch) {
                 const _f = window.fetch;
@@ -466,6 +477,9 @@ def _try_domains_cdp(browser_path, cookie_header, headless, user_agent=None):
 
             for base in DOMAINS:
                 captured = {'json': None}
+                cdp.checkin_request_id = None
+                cdp.checkin_loading_finished = False
+                last_turnstile_click = 0
                 _log(f"📄 正在通过 {base} 打开官方签到页…")
 
                 # 注入该域名的安全会话 Cookie
@@ -530,39 +544,63 @@ def _try_domains_cdp(browser_path, cookie_header, headless, user_agent=None):
                                 _log("✅ 通过 CDP 网络事件成功捕获签到接口响应！")
                                 break
                             except Exception:
-                                captured['json'] = {'code': 0, 'message': raw_body}
-                                break
+                                pass
 
-                    # 2. 检查 JavaScript hook (fetch & XHR) 以及页面 DOM 状态
-                    res = cdp.evaluate(r"""
+                    # 2. 检查 JavaScript hook (fetch & XHR)
+                    hook_res = cdp.evaluate("window._glados_checkin_result || null")
+                    if isinstance(hook_res, dict) and hook_res:
+                        captured['json'] = hook_res
+                        _log("✅ 通过页面 JS Hook 成功捕获签到结果！")
+                        break
+
+                    # 3. 检查页面临时弹出的 Toast 浮窗提示（仅限真正包含签到关键词的消息提示）
+                    toast_res = cdp.evaluate(r"""
                     (() => {
-                        if (window._glados_checkin_result) {
-                            return { status: 'captured', json: window._glados_checkin_result };
-                        }
-                        const text = document.body ? document.body.innerText : '';
-                        if (/Points/i.test(text) && (/Streak/i.test(text) || /Days Left/i.test(text))) {
-                            const btn = Array.from(document.querySelectorAll('button, a, div[role="button"]'))
-                                .find(b => /check\s*in/i.test((b.textContent || '').trim()));
-                            if (!btn || btn.disabled) {
-                                return { status: 'already_completed' };
+                        const notices = Array.from(document.querySelectorAll('.ant-message-notice, .ant-message, [role="alert"]'));
+                        for (const n of notices) {
+                            const text = (n.textContent || '').trim();
+                            if (/checkin!\s*got/i.test(text)) {
+                                return { code: 0, message: text };
+                            }
+                            if (/observation logged/i.test(text) || /repeats/i.test(text)) {
+                                return { code: 1, message: text };
                             }
                         }
-                        return { status: 'waiting' };
+                        return null;
                     })()
                     """)
+                    if isinstance(toast_res, dict) and toast_res:
+                        captured['json'] = toast_res
+                        _log(f"✅ 从页面 Toast 提示捕获签到结果: {toast_res.get('message')}")
+                        break
 
-                    if isinstance(res, dict):
-                        if res.get('status') == 'captured' and res.get('json'):
-                            captured['json'] = res['json']
-                            _log("✅ 通过页面 JS Hook 成功捕获签到结果！")
-                            break
-                        elif res.get('status') == 'already_completed':
-                            captured['json'] = {
-                                'code': 0,
-                                'message': "Today's observation logged. Return tomorrow for more points.",
+                    # 4. 检查是否出现需要交互的 Turnstile 验证框并自动点击复选框
+                    turnstile_box = cdp.evaluate(r"""
+                    (() => {
+                        const iframe = document.querySelector('iframe[src*="challenges.cloudflare.com"]')
+                            || document.querySelector('iframe[title*="Cloudflare"]')
+                            || document.querySelector('iframe[src*="turnstile"]');
+                        if (iframe) {
+                            const rect = iframe.getBoundingClientRect();
+                            if (rect.width > 50 && rect.height > 30) {
+                                return {
+                                    x: Math.round(rect.left + 30),
+                                    y: Math.round(rect.top + rect.height / 2)
+                                };
                             }
-                            _log("✅ 页面已呈现签到完成状态（检测到 Points 与 Streak 面板）！")
-                            break
+                        }
+                        return null;
+                    })()
+                    """)
+                    if isinstance(turnstile_box, dict) and 'x' in turnstile_box and 'y' in turnstile_box:
+                        now = time.monotonic()
+                        if now - last_turnstile_click > 5.0:
+                            last_turnstile_click = now
+                            _log("🖱️ 检测到 Cloudflare Turnstile 验证框，尝试模拟点击复选框…")
+                            tx, ty = turnstile_box['x'], turnstile_box['y']
+                            cdp.call('Input.dispatchMouseEvent', {'type': 'mouseMoved', 'x': tx, 'y': ty})
+                            cdp.call('Input.dispatchMouseEvent', {'type': 'mousePressed', 'x': tx, 'y': ty, 'button': 'left', 'clickCount': 1})
+                            cdp.call('Input.dispatchMouseEvent', {'type': 'mouseReleased', 'x': tx, 'y': ty, 'button': 'left', 'clickCount': 1})
 
                     time.sleep(0.5)
 
