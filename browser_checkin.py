@@ -870,18 +870,12 @@ def _try_domains_playwright(context, cookie_header):
             'detail': str(last_error or '所有域名均未完成签到')}
 
 
-# 模块运行时状态：若此前检测到服务端要求设备一致性，则在后续重试中优先使用配置的 User-Agent
-_PREFER_CONFIGURED_UA = False
-
-
 def browser_checkin(cookie_header, user_agent, domains=None):
     """用真浏览器完成一次签到，返回 /api/user/checkin 的 JSON（或失败原因 dict）。
 
     优先使用系统已安装的 Edge/Chrome 浏览器（通过原生 CDP 协议，无需安装 Playwright）；
     未检测到系统浏览器时，若环境已装有 Playwright 则回退到 Playwright 运行。
     """
-    global _PREFER_CONFIGURED_UA
-
     if domains:
         globals()['DOMAINS'] = tuple(domains)
 
@@ -904,28 +898,22 @@ def browser_checkin(cookie_header, user_agent, domains=None):
     # 0. 优先检测是否配置了自定义 CDP 地址（GLADOS_CDP_URL，如 http://127.0.0.1:9222 或 ws://...）
     cdp_url = os.environ.get('GLADOS_CDP_URL', '').strip()
     if cdp_url:
-        initial_ua = user_agent if (_PREFER_CONFIGURED_UA and user_agent) else None
-        result = _try_remote_cdp(cdp_url, cookie_header, user_agent=initial_ua)
+        result = _try_remote_cdp(cdp_url, cookie_header, user_agent=user_agent)
         if (isinstance(result, dict) and user_agent
                 and result.get('reason') in ('device-mismatch', 'http-auth-rejected')):
-            _PREFER_CONFIGURED_UA = True
-            if initial_ua is None:
-                _log("🔄 服务端判定设备不一致，改用配置的 User-Agent 重试…")
-                result = _try_remote_cdp(cdp_url, cookie_header, user_agent=user_agent)
+            _log("🔄 配置的 User-Agent 未通过服务端设备校验，尝试改用浏览器原生 User-Agent 重试…")
+            result = _try_remote_cdp(cdp_url, cookie_header, user_agent=None)
         return result
 
     # 1. 优先使用系统原生浏览器（Edge/Chrome）+ 原生 CDP 通道
     browser_path = find_browser_executable()
     if browser_path:
         _log(f"🌐 优先使用系统已安装浏览器: {browser_path}")
-        initial_ua = user_agent if (_PREFER_CONFIGURED_UA and user_agent) else None
-        result = _try_domains_cdp(browser_path, cookie_header, headless, user_agent=initial_ua)
+        result = _try_domains_cdp(browser_path, cookie_header, headless, user_agent=user_agent)
         if (isinstance(result, dict) and user_agent
                 and result.get('reason') in ('device-mismatch', 'http-auth-rejected')):
-            _PREFER_CONFIGURED_UA = True
-            if initial_ua is None:
-                _log("🔄 服务端判定设备不一致，改用配置的 User-Agent 重试…")
-                result = _try_domains_cdp(browser_path, cookie_header, headless, user_agent=user_agent)
+            _log("🔄 配置的 User-Agent 未通过服务端设备校验，尝试改用浏览器原生 User-Agent 重试…")
+            result = _try_domains_cdp(browser_path, cookie_header, headless, user_agent=None)
         return result
 
     # 2. 回退机制：若无系统原生浏览器，但装有 Playwright，则尝试 Playwright
@@ -940,23 +928,23 @@ def browser_checkin(cookie_header, user_agent, domains=None):
 
     with sync_playwright() as pw:
         try:
-            context, channel = _pick_context(pw, headless)
+            context, channel = _pick_context(pw, headless, user_agent=user_agent)
         except RuntimeError as e:
             if headless:
                 return {'request_failed': True, 'reason': 'browser-checkin-unavailable',
                         'detail': str(e)}
-            context, channel = _pick_context(pw, True)
+            context, channel = _pick_context(pw, True, user_agent=user_agent)
         _log(f"🌐 Playwright 回退通道已启动（channel={channel or 'chromium'}）")
         try:
             result = _try_domains_playwright(context, cookie_header)
             if (isinstance(result, dict) and user_agent
                     and result.get('reason') in ('device-mismatch', 'http-auth-rejected')):
-                _log("🔄 服务端判定设备不一致，改用配置的 User-Agent 重试…")
+                _log("🔄 配置的 User-Agent 未通过服务端设备校验，尝试改用浏览器原生 User-Agent 重试…")
                 try:
                     context.close()
                 except Exception:
                     pass
-                context, channel = _pick_context(pw, headless, user_agent=user_agent)
+                context, channel = _pick_context(pw, headless, user_agent=None)
                 result = _try_domains_playwright(context, cookie_header)
             return result
         finally:
