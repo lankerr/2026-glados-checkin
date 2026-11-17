@@ -17,6 +17,12 @@
 3. 点**加载已解压的扩展程序**，选择解压目录
 4. 确保浏览器已登录 glados.cloud，完成——徽章出现 🔥 天数即工作正常
 
+## 国际化
+
+默认语言为简体中文（`_locales/zh_CN`），并提供英文（`_locales/en`）。Chrome 会按浏览器语言自动切换；缺少对应语言时回退到 `default_locale`（zh_CN）。
+
+打包 zip 时必须带上 `_locales` 目录，否则会报 `Default locale was specified, but _locales subtree is missing.`
+
 ## 使用
 
 - 什么都不用做：到点自动开页签到后关页，弹系统通知告知结果
