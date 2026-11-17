@@ -11,6 +11,7 @@
 | [@Ch3nSir](https://github.com/Ch3nSir) | 添加 Server酱 Turbo / Server酱³ 推送支持，补充部署说明、NixOS 配置和通知回归测试。 | [#27](https://github.com/lankerr/2026-glados-checkin/pull/27) |
 | [@badpinkman](https://github.com/badpinkman) | 适配新版 `gld:sess` 会话与浏览器设备校验，完善 Cookie 获取、User-Agent 配置和认证失败提示，并提供真实运行验证。 | [#18](https://github.com/lankerr/2026-glados-checkin/pull/18) |
 | [@Unexpectedlyc](https://github.com/Unexpectedlyc) | 调整 README 的部署顺序与说明，减少 GitHub Actions 和外部定时器配置带来的误解。 | [#5](https://github.com/lankerr/2026-glados-checkin/pull/5) |
+| [@Unexpectedlyc](https://github.com/Unexpectedlyc)（再次贡献） | 修复浏览器插件 `_locales` 缺失导致 Chrome/Edge 无法加载的问题，为插件补齐中英双语国际化（36 条消息）并增加后台运行设置说明。 | [#44](https://github.com/lankerr/2026-glados-checkin/pull/44) |
 | [@Initsnow](https://github.com/Initsnow) | 添加 Telegram 推送、通知级别与 NixOS Flake 支持，并修复 Telegram 消息格式问题。 | [#3](https://github.com/lankerr/2026-glados-checkin/pull/3) |
 
 同时感谢 [@LxFairy](https://github.com/LxFairy) 提交上游同步与冲突处理 PR（[#8](https://github.com/lankerr/2026-glados-checkin/pull/8)、[#9](https://github.com/lankerr/2026-glados-checkin/pull/9)，未合并），以及在 Issues 中提供报错日志、排查线索和复测反馈的用户。
