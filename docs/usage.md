@@ -24,6 +24,7 @@
 | `PUSH_LEVEL`         | ❌ 否 | 推送级别：`fail_only`（默认，仅失败推送）或 `all`（每次均推送）            |
 | `EXCHANGE_PLAN`      | ❌ 否 | 积分自动兑换计划（#11）：`plan500`（默认，500 分自动兑换 100 天）、`plan200`（200 分→30 天）、`plan100`（100 分→10 天）或 `off`（关闭）。兑换结果即使 `PUSH_LEVEL=fail_only` 也会推送。 |
 | `GLADOS_BROWSER_CHECKIN` | ❌ 否 | Turnstile 真浏览器兜底开关：默认开启；`0` 关闭。检测到 `GITHUB_ACTIONS` 时默认自动禁用，设 `1` 可显式尝试。 |
+| `GLADOS_BROWSER_ENGINE`   | ❌ 否 | 浏览器驱动引擎：`auto`（默认，优先原生 CDP，无可用系统浏览器时回退 Playwright）、`cdp`（强制仅原生 CDP）、`playwright`（强制仅 Playwright）。 |
 | `GLADOS_BROWSER_HEADLESS` | ❌ 否 | 浏览器兜底改无头模式：`1` 无头，`0` 有头；未检测到图形桌面（无 DISPLAY）时自动切换为无头。 |
 | `GLADOS_BROWSER_PATH`     | ❌ 否 | 自定义浏览器可执行文件路径（如未在默认 PATH 中，可指定本地 Edge/Chrome/Chromium 路径）。 |
 | `GLADOS_CDP_URL`          | ❌ 否 | 自定义 CDP 服务端点（如 `http://127.0.0.1:9222` 或 `ws://...`），支持复用已有浏览器实例或远程无头容器。 |
@@ -473,6 +474,7 @@ python3 checkin.py
             cookie = "gld:sess=xxx; gld:sess.sig=yyy";
 
             # 【可选】浏览器配置（用于 Cloudflare Turnstile 验证）
+            # browserEngine = "auto";             # "auto"（默认） / "cdp" / "playwright"
             # browserPackage = pkgs.microsoft-edge; # 提供系统中已有的 Edge/Chrome/Chromium
             # cdpUrl = "http://127.0.0.1:9222";     # 或连接已有调试端口/远程无头容器
 

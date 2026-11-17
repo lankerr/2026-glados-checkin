@@ -22,22 +22,31 @@
         system:
         let
           pkgs = pkgsFor system;
-          pythonEnv = pkgs.python3.withPackages (ps: [ ps.requests ]);
+          makePkg =
+            { withPlaywright ? false }:
+            let
+              pythonEnv = pkgs.python3.withPackages (
+                ps: [ ps.requests ] ++ nixpkgs.lib.optional withPlaywright ps.playwright
+              );
+            in
+            pkgs.stdenv.mkDerivation {
+              pname = "glados-checkin" + (if withPlaywright then "-playwright" else "");
+              version = "1.1.0";
+              src = ./.;
+              buildInputs = [ pythonEnv ];
+              installPhase = ''
+                mkdir -p $out/bin
+                cp checkin.py $out/bin/glados-checkin
+                cp browser_checkin.py $out/bin/browser_checkin.py
+                chmod +x $out/bin/glados-checkin
+                sed -i "1s|.*|#!${pythonEnv}/bin/python3|" $out/bin/glados-checkin
+              '';
+              meta.mainProgram = "glados-checkin";
+            };
         in
         {
-          default = pkgs.stdenv.mkDerivation {
-            pname = "glados-checkin";
-            version = "1.1.0";
-            src = ./.;
-            buildInputs = [ pythonEnv ];
-            installPhase = ''
-              mkdir -p $out/bin
-              cp checkin.py $out/bin/glados-checkin
-              cp browser_checkin.py $out/bin/browser_checkin.py
-              chmod +x $out/bin/glados-checkin
-              sed -i "1s|.*|#!${pythonEnv}/bin/python3|" $out/bin/glados-checkin
-            '';
-          };
+          default = makePkg { withPlaywright = false; };
+          withPlaywright = makePkg { withPlaywright = true; };
         }
       );
 

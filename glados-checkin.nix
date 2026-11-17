@@ -15,6 +15,17 @@ in
   options.services.glados-checkin = {
     enable = mkEnableOption "GLaDOS Automatic Check-in Service";
 
+    package = mkOption {
+      type = types.package;
+      default =
+        if cfg.browserEngine == "playwright" then
+          self.packages.${pkgs.system}.withPlaywright
+        else
+          self.packages.${pkgs.system}.default;
+      defaultText = literalExpression "self.packages.\${pkgs.system}.default (or withPlaywright if browserEngine == \"playwright\")";
+      description = "The glados-checkin package to use.";
+    };
+
     cookie = mkOption {
       type = types.str;
       description = "GLaDOS Cookie (or multiple cookies separated by && or newline). Keep it secret.";
@@ -53,6 +64,16 @@ in
       description = "ServerChan SendKey for notifications (Turbo or ServerChan 3).";
     };
 
+    browserEngine = mkOption {
+      type = types.enum [
+        "auto"
+        "cdp"
+        "playwright"
+      ];
+      default = "auto";
+      description = "Browser automation engine to use: 'auto' (prefers system browser CDP, falls back to Playwright), 'cdp', or 'playwright'.";
+    };
+
     browserPackage = mkOption {
       type = types.nullOr types.package;
       default = null;
@@ -76,7 +97,12 @@ in
       environment = {
         GLADOS_COOKIE = cfg.cookie;
         PUSH_LEVEL = cfg.pushLevel;
+        GLADOS_BROWSER_ENGINE = cfg.browserEngine;
       }
+      // (optionalAttrs (cfg.browserEngine == "playwright") {
+        PLAYWRIGHT_BROWSERS_PATH = "${pkgs.playwright-driver.browsers}";
+        PLAYWRIGHT_SKIP_VALIDATE_HOST_REQUIREMENTS = "true";
+      })
       // (optionalAttrs (cfg.telegramBotToken != null) {
         TELEGRAM_BOT_TOKEN = cfg.telegramBotToken;
       })
@@ -95,7 +121,7 @@ in
 
       serviceConfig = {
         Type = "oneshot";
-        ExecStart = "${self.packages.${pkgs.system}.default}/bin/glados-checkin";
+        ExecStart = "${cfg.package}/bin/glados-checkin";
         LoadCredential = [ ]; # Can be used for secrets later if needed
         DynamicUser = true;
         StateDirectory = "glados-checkin";

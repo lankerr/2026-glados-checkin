@@ -869,11 +869,79 @@ def _try_domains_playwright(context, cookie_header):
             'detail': str(last_error or '所有域名均未完成签到')}
 
 
+def _run_cdp(cookie_header, user_agent, headless):
+    """尝试使用 CDP 模式（远程 CDP 端点或本地已安装浏览器）执行签到。
+
+    若未配置 CDP 端点且未找到本地浏览器，返回 None。
+    """
+    cdp_url = os.environ.get('GLADOS_CDP_URL', '').strip()
+    if cdp_url:
+        result = _try_remote_cdp(cdp_url, cookie_header, user_agent=user_agent)
+        if (isinstance(result, dict) and user_agent
+                and result.get('reason') in ('device-mismatch', 'http-auth-rejected')):
+            _log("🔄 配置的 User-Agent 未通过服务端设备校验，尝试改用浏览器原生 User-Agent 重试…")
+            result = _try_remote_cdp(cdp_url, cookie_header, user_agent=None)
+        return result
+
+    browser_path = find_browser_executable()
+    if browser_path:
+        _log(f"🌐 优先使用系统已安装浏览器: {browser_path}")
+        result = _try_domains_cdp(browser_path, cookie_header, headless, user_agent=user_agent)
+        if (isinstance(result, dict) and user_agent
+                and result.get('reason') in ('device-mismatch', 'http-auth-rejected')):
+            _log("🔄 配置的 User-Agent 未通过服务端设备校验，尝试改用浏览器原生 User-Agent 重试…")
+            result = _try_domains_cdp(browser_path, cookie_header, headless, user_agent=None)
+        return result
+
+    return None
+
+
+def _run_playwright(cookie_header, user_agent, headless):
+    """使用 Playwright 引擎执行签到。"""
+    try:
+        from playwright.sync_api import sync_playwright
+    except ImportError:
+        return {
+            'request_failed': True,
+            'reason': 'browser-checkin-unavailable',
+            'detail': 'Playwright 未安装。可通过 pip install playwright && playwright install 安装，或切换至 CDP 引擎（GLADOS_BROWSER_ENGINE=cdp）。',
+        }
+
+    with sync_playwright() as pw:
+        try:
+            context, channel = _pick_context(pw, headless, user_agent=user_agent)
+        except RuntimeError as e:
+            if headless:
+                return {'request_failed': True, 'reason': 'browser-checkin-unavailable',
+                        'detail': str(e)}
+            context, channel = _pick_context(pw, True, user_agent=user_agent)
+        _log(f"🌐 Playwright 通道已启动（channel={channel or 'chromium'}）")
+        try:
+            result = _try_domains_playwright(context, cookie_header)
+            if (isinstance(result, dict) and user_agent
+                    and result.get('reason') in ('device-mismatch', 'http-auth-rejected')):
+                _log("🔄 配置的 User-Agent 未通过服务端设备校验，尝试改用浏览器原生 User-Agent 重试…")
+                try:
+                    context.close()
+                except Exception:
+                    pass
+                context, channel = _pick_context(pw, headless, user_agent=None)
+                result = _try_domains_playwright(context, cookie_header)
+            return result
+        finally:
+            try:
+                context.close()
+            except Exception:
+                pass
+
+
 def browser_checkin(cookie_header, user_agent, domains=None):
     """用真浏览器完成一次签到，返回 /api/user/checkin 的 JSON（或失败原因 dict）。
 
-    优先使用系统已安装的 Edge/Chrome 浏览器（通过原生 CDP 协议，无需安装 Playwright）；
-    未检测到系统浏览器时，若环境已装有 Playwright 则回退到 Playwright 运行。
+    支持通过 GLADOS_BROWSER_ENGINE 环境变量显式指定驱动引擎：
+      - 'auto'（默认）：优先使用系统已安装的 Edge/Chrome（原生 CDP），未检测到时自动回退到 Playwright；
+      - 'cdp'：强制仅使用原生 CDP 驱动模式（系统浏览器或 GLADOS_CDP_URL）；
+      - 'playwright'：强制仅使用 Playwright 驱动模式。
     """
     if domains:
         globals()['DOMAINS'] = tuple(domains)
@@ -894,60 +962,33 @@ def browser_checkin(cookie_header, user_agent, domains=None):
         if headless:
             _log("⚠️ 未检测到图形桌面（DISPLAY/WAYLAND_DISPLAY），自动切换至无头模式（headless）")
 
-    # 0. 优先检测是否配置了自定义 CDP 地址（GLADOS_CDP_URL，如 http://127.0.0.1:9222 或 ws://...）
-    cdp_url = os.environ.get('GLADOS_CDP_URL', '').strip()
-    if cdp_url:
-        result = _try_remote_cdp(cdp_url, cookie_header, user_agent=user_agent)
-        if (isinstance(result, dict) and user_agent
-                and result.get('reason') in ('device-mismatch', 'http-auth-rejected')):
-            _log("🔄 配置的 User-Agent 未通过服务端设备校验，尝试改用浏览器原生 User-Agent 重试…")
-            result = _try_remote_cdp(cdp_url, cookie_header, user_agent=None)
+    engine = os.environ.get('GLADOS_BROWSER_ENGINE', 'auto').strip().lower()
+
+    if engine == 'playwright':
+        return _run_playwright(cookie_header, user_agent, headless)
+
+    if engine == 'cdp':
+        result = _run_cdp(cookie_header, user_agent, headless)
+        if result is not None:
+            return result
+        return {
+            'request_failed': True,
+            'reason': 'browser-checkin-unavailable',
+            'detail': '已指定使用 CDP 引擎 (GLADOS_BROWSER_ENGINE=cdp)，但未在系统中找到 Edge/Chrome/Chromium 浏览器，且未配置 GLADOS_CDP_URL。',
+        }
+
+    # 默认 auto 模式：先尝试 CDP，若无可用浏览器再回退到 Playwright
+    result = _run_cdp(cookie_header, user_agent, headless)
+    if result is not None:
         return result
 
-    # 1. 优先使用系统原生浏览器（Edge/Chrome）+ 原生 CDP 通道
-    browser_path = find_browser_executable()
-    if browser_path:
-        _log(f"🌐 优先使用系统已安装浏览器: {browser_path}")
-        result = _try_domains_cdp(browser_path, cookie_header, headless, user_agent=user_agent)
-        if (isinstance(result, dict) and user_agent
-                and result.get('reason') in ('device-mismatch', 'http-auth-rejected')):
-            _log("🔄 配置的 User-Agent 未通过服务端设备校验，尝试改用浏览器原生 User-Agent 重试…")
-            result = _try_domains_cdp(browser_path, cookie_header, headless, user_agent=None)
-        return result
-
-    # 2. 回退机制：若无系统原生浏览器，但装有 Playwright，则尝试 Playwright
-    try:
-        from playwright.sync_api import sync_playwright
-    except ImportError:
+    pw_result = _run_playwright(cookie_header, user_agent, headless)
+    if (isinstance(pw_result, dict)
+            and pw_result.get('reason') == 'browser-checkin-unavailable'
+            and 'Playwright 未安装' in pw_result.get('detail', '')):
         return {
             'request_failed': True,
             'reason': 'browser-checkin-unavailable',
             'detail': '未在系统中找到 Edge/Chrome/Chromium 浏览器，且未安装 Playwright。可通过环境变量 GLADOS_BROWSER_PATH 指定浏览器路径。',
         }
-
-    with sync_playwright() as pw:
-        try:
-            context, channel = _pick_context(pw, headless, user_agent=user_agent)
-        except RuntimeError as e:
-            if headless:
-                return {'request_failed': True, 'reason': 'browser-checkin-unavailable',
-                        'detail': str(e)}
-            context, channel = _pick_context(pw, True, user_agent=user_agent)
-        _log(f"🌐 Playwright 回退通道已启动（channel={channel or 'chromium'}）")
-        try:
-            result = _try_domains_playwright(context, cookie_header)
-            if (isinstance(result, dict) and user_agent
-                    and result.get('reason') in ('device-mismatch', 'http-auth-rejected')):
-                _log("🔄 配置的 User-Agent 未通过服务端设备校验，尝试改用浏览器原生 User-Agent 重试…")
-                try:
-                    context.close()
-                except Exception:
-                    pass
-                context, channel = _pick_context(pw, headless, user_agent=None)
-                result = _try_domains_playwright(context, cookie_header)
-            return result
-        finally:
-            try:
-                context.close()
-            except Exception:
-                pass
+    return pw_result
