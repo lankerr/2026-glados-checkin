@@ -19,3 +19,27 @@ jobs:
         run: python -m pip install -r requirements.txt
       - name: Run unit tests
         run: python -m unittest discover -s tests -v
+
+  # Separate additive check: keep the existing required "tests" job unchanged.
+  extension-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    defaults:
+      run:
+        working-directory: extension
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          package-manager-cache: false
+      # No npm install: this suite uses only Node built-ins and mocked browser APIs.
+      - name: Check extension JavaScript syntax
+        run: |
+          for file in *.js dashboard/*.js tests/*.test.js; do
+            node --check "$file"
+          done
+      - name: Run offline extension unit tests
+        run: npm test

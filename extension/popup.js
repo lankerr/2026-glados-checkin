@@ -62,27 +62,36 @@ function formatPoints(value) {
   return Number.isInteger(n) ? String(n) : String(parseFloat(n.toFixed(4)));
 }
 
-async function refresh() {
-  const s = await chrome.runtime.sendMessage({ type: 'get-state' });
-  if (s) {
-    $('streak').textContent = s.streak && s.streak.count
-      ? t('streakDays', [String(s.streak.count), s.streak.lastDate])
-      : t('streakNone');
-    const today = new Date(Date.now() + (8 * 60 + new Date().getTimezoneOffset()) * 60000).toISOString().slice(0, 10);
-    $('today').textContent = s.lastDoneDate === today ? t('todayDone') : t('todayPending');
-  }
-  try {
-    const r = await fetch('https://glados.cloud/api/user/points', { credentials: 'include' });
-    if (r.ok) { const d = await r.json(); $('points').textContent = formatPoints(d.points ?? '?'); }
-    else $('points').textContent = t('loginRequired');
-  } catch (e) { $('points').textContent = '-'; }
+
+async function request(type, consent) {
+  const r = await chrome.runtime.sendMessage({type, consent});
+  if (!r?.ok) throw new Error('request_failed');
+  return r.data;
 }
-document.getElementById('run').addEventListener('click', async (e) => {
-  e.target.disabled = true; e.target.textContent = t('btnRunning');
-  await chrome.runtime.sendMessage({ type: 'manual-run' });
-  setTimeout(() => { e.target.disabled = false; e.target.textContent = t('btnCheckin'); refresh(); }, 4000);
-});
+async function refresh() {
+  const s = await request('get-state');
+  $('account').textContent = s.binding?.label || t('notConnected');
+  $('automation').textContent = t(s.enabled ? 'enabled' : 'disabled');
+  $('task').textContent = s.task ? (t(s.task.state) || s.task.state) : t('noTask');
+  $('points').textContent = s.observation ? formatPoints(s.observation.points) : '—';
+}
+function action(id, type, confirmation) {
+  $(id).addEventListener('click', async () => {
+    if (confirmation && !confirm(t(confirmation))) return;
+    $(id).disabled = true; $('error').textContent = '';
+    try { await request(type, confirmation ? true : undefined); await refresh(); }
+    catch { $('error').textContent = t('errorSafe'); }
+    finally { $(id).disabled = false; }
+  });
+}
+action('connect','connect');
+action('enable','enable','consentEnable');
+action('run','manual-run','consentRun');
+action('pause','pause');
+action('openSite','open-site');
+action('reviewTask','review-task','consentReview');
+action('forget','forget','consentForget');
 $('copySettings').addEventListener('click', copySettingsUrl);
 applyI18n();
 applyBackgroundHint();
-refresh();
+refresh().catch(() => { $('error').textContent = t('errorSafe'); });

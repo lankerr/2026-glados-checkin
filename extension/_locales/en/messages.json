@@ -4,7 +4,7 @@
     "description": "Extension name"
   },
   "extDescription": {
-    "message": "Zero-config auto check-in using your browser session; three daily slots; the badge shows consecutive credit days",
+    "message": "Local check-in assistant, paused by default. Identity checks, single-attempt submission, stop on uncertainty and manual handoff.",
     "description": "Extension description"
   },
   "actionTitle": {
@@ -40,11 +40,11 @@
     "description": "Three check-in slots"
   },
   "btnCheckin": {
-    "message": "Check in now",
+    "message": "Attempt one check-in",
     "description": "Manual check-in button"
   },
   "popupNote": {
-    "message": "Zero-config: uses your browser session. Skips automatically if already checked in elsewhere. The official page completes human verification.",
+    "message": "Connect your account read-only first. Automation requires explicit opt-in; verification or unknown results pause it. Success is not guaranteed.",
     "description": "Popup footer note"
   },
   "streakDays": {
@@ -78,7 +78,7 @@
     "description": "Points placeholder when logged out"
   },
   "btnRunning": {
-    "message": "Triggered, page will close after check-in…",
+    "message": "Working…",
     "description": "Manual check-in in progress"
   },
   "badgeTitle": {
@@ -132,7 +132,7 @@
     "description": "Check-in button timeout"
   },
   "bgHint": {
-    "message": "Check-in can still run after you close windows: open $URL$ and enable \"$TOGGLE$\". Clicking the window X is fine; Exit from the tray, sleep, shutdown, or killing the process will stop it.",
+    "message": "Schedules require the browser process and system to run. The \"$TOGGLE$\" setting at $URL$ does not guarantee operation after closing windows; test your browser.",
     "description": "Popup background-running hint with settings URL and toggle name",
     "placeholders": {
       "url": {
@@ -168,5 +168,83 @@
   "notifyBgMessage": {
     "message": "To keep auto check-in after closing windows, turn on “Continue running background apps when the browser is closed” in system settings. Clicking the window X is fine; Exit from the tray stops the extension.",
     "description": "First-install reminder body for the background toggle"
+  },
+  "labelAccount": {
+    "message": "Connected account"
+  },
+  "labelAutomation": {
+    "message": "Automation"
+  },
+  "labelTask": {
+    "message": "Latest task"
+  },
+  "labelLedger": {
+    "message": "Last read-only points"
+  },
+  "connect": {
+    "message": "Connect / verify account (read-only)"
+  },
+  "enable": {
+    "message": "Enable daily schedule"
+  },
+  "pause": {
+    "message": "Pause automation"
+  },
+  "openSite": {
+    "message": "Open official site / verify manually"
+  },
+  "reviewTask": {
+    "message": "I reviewed it; clear task block"
+  },
+  "forget": {
+    "message": "Clear extension data and pause"
+  },
+  "consentEnable": {
+    "message": "Allow a single attempt at 09:30 / 12:30 / 20:30 Beijing time? The browser must run, pages may open and verification may need you. Unknown results pause automation; no redemption."
+  },
+  "consentRun": {
+    "message": "Attempt one check-in? This may change account points; no automatic redemption."
+  },
+  "consentReview": {
+    "message": "First verify your status on the official site. Clearing the block does not submit and keeps automation paused. A later attempt may repeat a submission. Continue?"
+  },
+  "consentForget": {
+    "message": "Pause and clear extension records? This does not log out of the official site or close open pages."
+  },
+  "enabled": {
+    "message": "Enabled"
+  },
+  "disabled": {
+    "message": "Paused"
+  },
+  "notConnected": {
+    "message": "Not connected"
+  },
+  "noTask": {
+    "message": "No task yet"
+  },
+  "errorSafe": {
+    "message": "Operation not completed. Check the account or task state; no success was reported."
+  },
+  "PREPARING": {
+    "message": "Preparing page"
+  },
+  "PAGE_OPEN": {
+    "message": "Waiting for page / verification"
+  },
+  "SUBMITTING": {
+    "message": "One submission authorised"
+  },
+  "UNKNOWN": {
+    "message": "Unknown result; paused"
+  },
+  "NEEDS_USER": {
+    "message": "Needs your attention; paused"
+  },
+  "OBSERVED": {
+    "message": "Check-in record observed (not attributed to this attempt)"
+  },
+  "ledgerNote": {
+    "message": "At most the first 10 returned records are checked. Compensation, refunds and exchanges are not treated as check-ins."
   }
 }

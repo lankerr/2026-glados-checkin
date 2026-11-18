@@ -1,18 +1,20 @@
 {
   "manifest_version": 3,
   "name": "__MSG_extName__",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "__MSG_extDescription__",
   "default_locale": "zh_CN",
-  "permissions": ["alarms", "storage", "notifications"],
-  "host_permissions": [
-    "https://glados.cloud/*",
-    "https://glados.rocks/*",
-    "https://glados.network/*",
-    "https://glados.space/*",
-    "https://glados.one/*"
+  "permissions": [
+    "alarms",
+    "storage"
   ],
-  "background": { "service_worker": "background.js" },
+  "host_permissions": [
+    "https://glados.cloud/*"
+  ],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
   "action": {
     "default_popup": "popup.html",
     "default_title": "__MSG_actionTitle__"
@@ -20,13 +22,11 @@
   "content_scripts": [
     {
       "matches": [
-        "https://glados.cloud/console/checkin*",
-        "https://glados.rocks/console/checkin*",
-        "https://glados.network/console/checkin*",
-        "https://glados.space/console/checkin*",
-        "https://glados.one/console/checkin*"
+        "https://glados.cloud/console/checkin*"
       ],
-      "js": ["content.js"],
+      "js": [
+        "content.js"
+      ],
       "run_at": "document_idle"
     }
   ],
@@ -34,5 +34,10 @@
     "16": "icons/icon16.png",
     "48": "icons/icon48.png",
     "128": "icons/icon128.png"
+  },
+  "minimum_chrome_version": "140",
+  "options_ui": {
+    "page": "dashboard/index.html",
+    "open_in_tab": true
   }
 }

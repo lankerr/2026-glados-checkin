@@ -20,12 +20,22 @@
 </head>
 <body>
 <h1 data-i18n="popupTitle">GLaDOS Check-in</h1>
-<div class="row"><span data-i18n="labelStreak">连续入账</span><b class="fire" id="streak">-</b></div>
-<div class="row"><span data-i18n="labelToday">今日状态</span><b id="today">-</b></div>
-<div class="row"><span data-i18n="labelPoints">当前积分</span><b id="points">-</b></div>
-<div class="row"><span data-i18n="labelSlots">每日时段</span><b data-i18n="slotsValue">09:30 / 12:30 / 20:30</b></div>
-<button id="run" data-i18n="btnCheckin">立即签到</button>
-<div class="note" data-i18n="popupNote">零配置：用浏览器自身登录态。已在别处签到时扩展自动跳过。签到由官方页面完成人机验证。</div>
+
+<div class="row"><span data-i18n="labelAccount"></span><b id="account">—</b></div>
+<div class="row"><span data-i18n="labelAutomation"></span><b id="automation">—</b></div>
+<div class="row"><span data-i18n="labelTask"></span><b id="task">—</b></div>
+<div class="row"><span data-i18n="labelLedger"></span><b id="points">—</b></div>
+<div class="row"><span data-i18n="labelSlots"></span><b data-i18n="slotsValue"></b></div>
+<button id="connect" data-i18n="connect"></button>
+<button id="enable" data-i18n="enable"></button>
+<button id="run" data-i18n="btnCheckin"></button>
+<button id="pause" class="secondary" data-i18n="pause"></button>
+<button id="openSite" class="secondary" data-i18n="openSite"></button>
+<button id="reviewTask" class="secondary" data-i18n="reviewTask"></button>
+<button id="forget" class="secondary" data-i18n="forget"></button>
+<p id="error" role="status"></p>
+<div class="note" data-i18n="popupNote"></div>
+<div class="note" data-i18n="ledgerNote"></div>
 <div class="hint">
   <p id="bgHint"></p>
   <button type="button" id="copySettings" class="secondary">复制设置地址</button>

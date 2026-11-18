@@ -4,7 +4,7 @@
     "description": "扩展名称"
   },
   "extDescription": {
-    "message": "零配置自动签到：用你自己的浏览器登录态；三时段幂等调度；徽章实时显示连续入账天数",
+    "message": "默认暂停的本地签到助手；身份核对、单次提交、未知结果停止，支持人工接管。",
     "description": "扩展描述"
   },
   "actionTitle": {
@@ -40,11 +40,11 @@
     "description": "三个签到时段"
   },
   "btnCheckin": {
-    "message": "立即签到",
+    "message": "尝试一次签到",
     "description": "手动签到按钮"
   },
   "popupNote": {
-    "message": "零配置：用浏览器自身登录态。已在别处签到时扩展自动跳过。签到由官方页面完成人机验证。",
+    "message": "先只读连接账号。自动执行须明确开启；遇到验证或不确定结果会暂停，不保证签到成功。",
     "description": "弹出页底部说明"
   },
   "streakDays": {
@@ -78,7 +78,7 @@
     "description": "未登录时的积分占位"
   },
   "btnRunning": {
-    "message": "已触发，签完自动关页…",
+    "message": "处理中…",
     "description": "手动签到进行中"
   },
   "badgeTitle": {
@@ -132,7 +132,7 @@
     "description": "页面超时未找到签到按钮"
   },
   "bgHint": {
-    "message": "关窗口后仍可到点签到：地址栏打开 $URL$，启用「$TOGGLE$」。点窗口 X 即可；托盘选「退出」、睡眠、关机或结束进程后不会签。",
+    "message": "计划任务依赖浏览器进程及系统运行。$URL$ 的「$TOGGLE$」不保证关窗后仍执行，需在你的浏览器实测。",
     "description": "弹出页后台运行说明，带设置地址和开关名称",
     "placeholders": {
       "url": {
@@ -168,5 +168,83 @@
   "notifyBgMessage": {
     "message": "关窗口后要继续自动签到，请在系统设置里打开「关闭浏览器后继续运行后台应用」。点窗口 X 可以，托盘「退出」会停掉扩展。",
     "description": "首次安装时后台开关提醒正文"
+  },
+  "labelAccount": {
+    "message": "已连接账号"
+  },
+  "labelAutomation": {
+    "message": "自动计划"
+  },
+  "labelTask": {
+    "message": "最近任务"
+  },
+  "labelLedger": {
+    "message": "最近只读积分"
+  },
+  "connect": {
+    "message": "只读连接 / 重新核对账号"
+  },
+  "enable": {
+    "message": "开启每日计划"
+  },
+  "pause": {
+    "message": "暂停自动计划"
+  },
+  "openSite": {
+    "message": "打开官网 / 人工验证"
+  },
+  "reviewTask": {
+    "message": "我已核对，清除任务阻塞"
+  },
+  "forget": {
+    "message": "清除扩展数据并暂停"
+  },
+  "consentEnable": {
+    "message": "允许每天北京时间09:30 / 12:30 / 20:30尝试一次？浏览器须运行，可能打开页面或需要人工验证。遇到未知结果将暂停；不会兑换。"
+  },
+  "consentRun": {
+    "message": "确认尝试一次签到？此操作可能改变账号积分；不会自动兑换。"
+  },
+  "consentReview": {
+    "message": "请先在官网核对是否已经签到。清除阻塞不会签到，且自动计划保持暂停；之后再次执行可能重复提交。继续？"
+  },
+  "consentForget": {
+    "message": "暂停并清除扩展记录？不会退出官网账号，也不会关闭已打开页面。"
+  },
+  "enabled": {
+    "message": "已开启"
+  },
+  "disabled": {
+    "message": "已暂停"
+  },
+  "notConnected": {
+    "message": "未连接"
+  },
+  "noTask": {
+    "message": "尚无任务"
+  },
+  "errorSafe": {
+    "message": "操作未完成。请核对账号或任务状态；未报告签到成功。"
+  },
+  "PREPARING": {
+    "message": "准备页面"
+  },
+  "PAGE_OPEN": {
+    "message": "等待页面 / 验证"
+  },
+  "SUBMITTING": {
+    "message": "已授予一次提交许可"
+  },
+  "UNKNOWN": {
+    "message": "结果未知，已暂停"
+  },
+  "NEEDS_USER": {
+    "message": "需要你处理，已暂停"
+  },
+  "OBSERVED": {
+    "message": "观察到签到流水（不归因本次）"
+  },
+  "ledgerNote": {
+    "message": "最多检查已返回前10条流水；补偿、退款、兑换不当作签到。"
   }
 }
