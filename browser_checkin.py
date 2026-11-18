@@ -237,7 +237,8 @@ class SimpleWebSocket:
                 raise ConnectionError("WebSocket 握手提前关闭")
             resp += chunk
         if b" 101 " not in resp:
-            raise ConnectionError(f"WebSocket 握手失败: {resp.split(b'\\r\\n')[0]}")
+            status_line = resp.split(b"\r\n")[0]
+            raise ConnectionError(f"WebSocket 握手失败: {status_line}")
 
     def send(self, data_str):
         data = data_str.encode('utf-8')
