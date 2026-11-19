@@ -348,7 +348,7 @@ def summarize_checkin_failure(result):
             label = '网络或服务暂时异常，未收到有效 API 响应'
         label += '；本次请求失败，今日签到状态未知'
     elif is_turnstile_checkin_result(result):
-        label = '服务端要求 Cloudflare Turnstile 人机验证，本次未入账；请通过官网浏览器手动签到'
+        label = '服务端要求 Cloudflare Turnstile 人机验证。请先核对官网流水，再按页面提示完成签到'
     elif reason == 'device-mismatch':
         label = '服务端拒绝设备校验；请核对会话和 User-Agent 配置'
     elif 'automated check-in detected' in message:

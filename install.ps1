@@ -38,7 +38,7 @@ if (-not ($hasChrome -or $hasEdge)) {
 # ---- 3. Cookie / UA 模板 ----
 Write-Host '[2/5] 检查 Cookie 配置...' -ForegroundColor Yellow
 $cookieFile = Join-Path $dir 'cookie.txt'
-if (-not (Test-Path $cookieFile) -or -not (Get-Content $cookieFile -Raw).Trim()) {
+if (-not (Test-Path -LiteralPath $cookieFile) -or [string]::IsNullOrWhiteSpace((Get-Content -LiteralPath $cookieFile -Raw))) {
     @'
 把下面一行替换成你的 GLaDOS Cookie（登录 glados.cloud -> F12 -> Network -> 刷新 -> 点第一个请求 -> Request Headers 里 cookie: 后面的整串）
 必须同时包含 gld:sess 与 gld:sess.sig
@@ -47,7 +47,7 @@ gld:sess=粘贴到这里; gld:sess.sig=粘贴到这里
     Write-Host '     已生成 cookie.txt 模板——请用记事本打开并粘贴你的 Cookie！' -ForegroundColor Magenta
 }
 $uaFile = Join-Path $dir 'user-agent.txt'
-if (-not (Test-Path $uaFile) -or -not (Get-Path $uaFile -ErrorAction SilentlyContinue) -or -not (Get-Content $uaFile -Raw).Trim()) {
+if (-not (Test-Path -LiteralPath $uaFile) -or [string]::IsNullOrWhiteSpace((Get-Content -LiteralPath $uaFile -Raw))) {
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36' | Out-File -LiteralPath $uaFile -Encoding utf8
     Write-Host '     已生成 user-agent.txt 默认值（建议换成你登录所用浏览器的 UA）' -ForegroundColor DarkYellow
 }
@@ -60,8 +60,9 @@ $ErrorActionPreference = 'Stop'
 [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false)
 $dir = $PSScriptRoot
 $env:PYTHONIOENCODING = 'utf-8'
-$raw = if (Test-Path (Join-Path $dir 'cookie.txt')) { Get-Content (Join-Path $dir 'cookie.txt') -Raw } else { '' }
-if (-not $raw.Trim()) { Write-Output '[错误] cookie.txt 为空'; exit 1 }
+$cookieFile = Join-Path $dir 'cookie.txt'
+$raw = if (Test-Path -LiteralPath $cookieFile) { Get-Content -LiteralPath $cookieFile -Raw }
+if ([string]::IsNullOrWhiteSpace($raw)) { Write-Output '[错误] cookie.txt 为空'; exit 1 }
 $env:GLADOS_COOKIE = $raw.Trim()
 $ua = if (Test-Path (Join-Path $dir 'user-agent.txt')) { [IO.File]::ReadAllText((Join-Path $dir 'user-agent.txt')).Trim() } else { '' }
 if ($ua) { $env:GLADOS_USER_AGENT = $ua }

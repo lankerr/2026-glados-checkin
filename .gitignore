@@ -4,6 +4,9 @@ __pycache__/
 # 真浏览器兜底的本地产物：登录态与截图绝不入库
 browser_profile/
 logs/
+/cookie.txt
+/user-agent.txt
+/run-checkin.ps1
 *.png
 *.zip
 !extension/icons/*.png

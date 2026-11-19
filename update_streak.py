@@ -1,69 +1,41 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""每日自动战报：读取积分流水，更新 README 中"连续自动入账"标记块。
-
-由 .github/workflows/streak.yml 每天上午（北京时间）调用：
-  1. 用仓库 Secrets 里的 Cookie 只读查询 /api/user/points；
-  2. 根据"奖励性正变动"日期与已持久化的状态，推进或重置连续天数；
-  3. 重写 README 中 <!--STREAK:START--> ... <!--STREAK:END--> 之间的内容。
-
-口径：与推送卡片一致——排除 exchange/refund 的正变动才计入；今日尚未入账时
-保持原状态不动（不报中断），断档后从可见流水窗口重算。
-"""
+"""Report the latest consecutive check-in dates visible in the points ledger."""
 
 import os
-import re
 import sys
 from datetime import date, timedelta
+from pathlib import Path
 
 import checkin
 
-MARK_START = '<!--STREAK:START-->'
-MARK_END = '<!--STREAK:END-->'
-README_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'README.md')
+CHECKIN_LABELS = {'checkin', 'check-in', 'check_in'}
 
 
-def next_state(prev_count, prev_date_str, credited_dates, today):
-    """推进连续入账状态。credited_dates 为 ISO 日期字符串集合。
+def visible_streak(entries, today):
+    credited_dates = set()
+    for entry in entries:
+        if entry.get('business') not in CHECKIN_LABELS:
+            continue
+        amount = checkin.parse_finite_number(entry.get('change'))
+        if amount is None or amount <= 0:
+            continue
+        try:
+            entry_date = date.fromisoformat(entry.get('date') or '')
+        except ValueError:
+            continue
+        if entry_date <= today:
+            credited_dates.add(entry_date)
 
-    返回 (count, last_date_str, updated_today)。今日未入账时原样返回。
-    """
-    today_s = today.isoformat()
-    yesterday_s = (today - timedelta(days=1)).isoformat()
-    if today_s not in credited_dates:
-        return prev_count, prev_date_str, False
-    if prev_date_str == today_s:
-        return prev_count, prev_date_str, False
-    if prev_date_str == yesterday_s and prev_count and prev_count > 0:
-        return prev_count + 1, today_s, True
-    # 断档或首次运行：从可见流水窗口向前数
+    if not credited_dates:
+        return 0, None
+    last_date = max(credited_dates)
     count = 0
-    cursor = today
-    while cursor.isoformat() in credited_dates:
+    cursor = last_date
+    while cursor in credited_dates:
         count += 1
         cursor -= timedelta(days=1)
-    return max(count, 1), today_s, True
-
-
-def parse_block(text):
-    """读取现有标记块中的 (count, last_date_str)。"""
-    m = re.search(re.escape(MARK_START) + r'(.*?)' + re.escape(MARK_END), text, re.S)
-    if not m:
-        return 0, None
-    body = m.group(1)
-    count_m = re.search(r'(\d+)\s*天', body)
-    date_m = re.search(r'(\d{4}-\d{2}-\d{2})', body)
-    return (int(count_m.group(1)) if count_m else 0), (date_m.group(1) if date_m else None)
-
-
-def render_block(count, last_date_str, last_gain):
-    gain = f'，{last_gain} 分' if last_gain else ''
-    return (
-        f'{MARK_START}\n'
-        f'> 🔥 **连续自动入账 {count} 天**（最近 {last_date_str}{gain}）'
-        '——每日云端只读核对自动更新，官网流水可查\n'
-        f'{MARK_END}'
-    )
+    return count, last_date
 
 
 def main():
@@ -76,27 +48,23 @@ def main():
         print('❌ 积分流水读取失败，本次不更新战报')
         return 1
 
-    credited = {
-        e['date'] for e in client.recent_entries
-        if e.get('date') and str(e.get('change', '')).startswith('+')
-        and 'exchange' not in (e.get('business') or '')
-        and 'refund' not in (e.get('business') or '')
-    }
     today = checkin.beijing_now().date()
-    text = open(README_PATH, encoding='utf-8').read()
-    prev_count, prev_date = parse_block(text)
-    count, last_date, changed = next_state(prev_count, prev_date, credited, today)
-
-    if not changed:
-        print(f'ℹ️ 今日尚未入账或已更新过，保持：{prev_count} 天 @ {prev_date}')
-        return 0
-    if MARK_START not in text:
-        print('❌ README 中未找到 STREAK 标记块')
-        return 1
-    block = render_block(count, last_date, client.today_rewards_total)
-    new_text = re.sub(re.escape(MARK_START) + r'.*?' + re.escape(MARK_END), block, text, flags=re.S)
-    open(README_PATH, 'w', encoding='utf-8', newline='').write(new_text)
-    print(f'✅ 战报已更新：连续自动入账 {count} 天 @ {last_date}')
+    count, last_date = visible_streak(client.recent_entries, today)
+    if last_date is None:
+        report = '前 10 条可见流水中无明确签到入账，签到状态待确认。'
+    else:
+        report = f'最近可见签到为 {last_date}，截至该日可见流水连续 {count} 天。'
+        if last_date < today:
+            report += '今日签到入账仍待确认。'
+    print(report)
+    summary = os.environ.get('GITHUB_STEP_SUMMARY')
+    if summary:
+        with Path(summary).open('a', encoding='utf-8') as output:
+            output.write(
+                f'## 签到流水只读核对\n\n{report}\n\n'
+                '只计入返回的前 10 条流水中明确标为签到的正变动。'
+                '日期按北京时间，同一天只统计一次，流水来源无法归属到某个脚本。\n'
+            )
     return 0
 
 

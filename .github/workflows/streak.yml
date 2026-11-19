@@ -7,8 +7,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
-  pull-requests: write
+  contents: read
 
 jobs:
   streak:
@@ -24,24 +23,8 @@ jobs:
       - name: Install dependencies
         run: python -m pip install -r requirements.txt
 
-      - name: Update streak block in README
+      - name: Summarize visible check-in history
         env:
           GLADOS_COOKIE: ${{ secrets.GLADOS_COOKIE }}
           GLADOS_USER_AGENT: ${{ vars.GLADOS_USER_AGENT || secrets.GLADOS_USER_AGENT }}
         run: python update_streak.py
-
-      - name: Open auto-merge PR if README changed
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          if git diff --quiet; then echo "no change"; exit 0; fi
-          DATE=$(date -u +%F)
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git checkout -b "streak/$DATE"
-          git add README.md
-          git commit -m "docs: daily streak update $DATE"
-          git push origin "streak/$DATE"
-          gh pr create --title "docs: daily streak update $DATE" \
-            --body "每日自动战报：连续自动入账天数刷新（Daily Streak Report 工作流生成，通过测试后自动合并）。"
-          gh pr merge --auto --merge
