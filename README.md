@@ -24,9 +24,7 @@
 
 **已有连续实测记录：** 维护者单一账号在 2026-11-14 / 15 / 16 分别观察到 **+10 / +19 / +12** 入账。[查看观察范围与来源](docs/status-notes.md)
 
-<!--STREAK:START-->
-> 🔥 **连续自动入账 3 天**（最近 2026-11-16，+12 分）——每日云端只读核对自动更新，官网流水可查
-<!--STREAK:END-->
+每日只读统计会在 [Daily Streak Report 的运行摘要](https://github.com/lankerr/2026-glados-checkin/actions/workflows/streak.yml) 显示最近可见的签到日期和连续天数。统计取自接口返回的前 10 条流水，只计入带有签到标签的正变动，日期按北京时间计算。
 
 <sub>这是单账号、单环境观察，不保证其他账号或每天成功。实际奖励以官网记录为准。</sub>
 
@@ -95,9 +93,7 @@ python checkin.py
 
 仓库包含 [`install.ps1`](install.ps1) 和 [`一键安装.cmd`](一键安装.cmd)，它们不是上面的手动流程。请在执行前检查脚本：安装器会安装依赖、生成本地配置及启动脚本，并注册每天 **09:30 / 12:30 / 20:30（系统本地时间）** 的计划任务；不等于三次奖励，也没有证据证明这样一定更稳定。
 
-当前安装器的 `user-agent.txt` 检查中使用了 `Get-Path`，仓库未定义此命令，标准 PowerShell 不提供它；当文件已存在且前面的短路条件未命中时可能在此失败。本次只改文档，未修复或在 Windows 验收安装器。
-
-安装器生成的 `cookie.txt`、`user-agent.txt` 和 `run-checkin.ps1` 不在当前 `.gitignore` 的明确忽略列表中。不要将含凭据的文件提交、打包公开或共享。该风险说明不代表已经发生泄露。建议先用上面的手动只读诊断流程。
+重复安装时会保留已有的非空 Cookie 和 User-Agent 配置。安装器生成的 `cookie.txt`、`user-agent.txt` 和 `run-checkin.ps1` 已加入 `.gitignore`。请将这些文件留在本机，分享日志或打包前检查是否含有凭据。
 
 </details>
 
