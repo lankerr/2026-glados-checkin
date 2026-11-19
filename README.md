@@ -71,6 +71,9 @@ python -m pip install -r requirements.txt
 
 按[图解步骤](docs/usage.md#get-cookie)取得本人账号的完整 Cookie，在**本地环境变量**中配置 `GLADOS_COOKIE`。必须包含 `gld:sess` 与 `gld:sess.sig`，不要把真实值写入代码、Issue 或截图。需要设备匹配时，配置同一浏览器的 `GLADOS_USER_AGENT`。
 
+> [!TIP]
+> 支持免 Playwright 的原生 CDP 系统浏览器模式：优先使用系统已安装的 Edge / Chrome / Chromium，无需下载额外驱动；也支持通过 `GLADOS_CDP_URL` 接入已有或远程浏览器，或通过 `GLADOS_BROWSER_ENGINE` 显式指定驱动引擎（`auto` / `cdp` / `playwright`）。
+
 先做只读检查。以下为 Windows PowerShell 示例，Cookie 应已通过本地私密配置设置：
 
 ```powershell
