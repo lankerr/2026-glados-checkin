@@ -9,7 +9,7 @@ from pathlib import Path
 
 import checkin
 
-CHECKIN_LABELS = {'checkin', 'check-in', 'check_in'}
+CHECKIN_LABELS = {'system:checkin', 'checkin', 'check-in', 'check_in'}
 
 
 def visible_streak(entries, today):

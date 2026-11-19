@@ -15,8 +15,8 @@ def row(day, business='checkin', change='+2'):
 class StreakReportTests(unittest.TestCase):
     def test_compensation_does_not_fill_a_missing_checkin_day(self):
         entries = [
-            row('2026-11-19'), row('2026-11-19', change='+0.5'),
-            row('2026-11-18', 'compensation'), row('2026-11-17'),
+            row('2026-11-19', 'system:checkin'), row('2026-11-19', change='+0.5'),
+            row('2026-11-18', 'system:compensation'), row('2026-11-17'),
         ]
         self.assertEqual(update_streak.visible_streak(entries, date(2026, 11, 19)),
                          (1, date(2026, 11, 19)))
