@@ -1,0 +1,9 @@
+**
+!checkin.py
+!update_streak.py
+!tests/
+!tests/test_update_streak.py
+!docs/
+!docs/examples/
+!docs/examples/ledger/
+!docs/examples/ledger/demo.py

@@ -10,7 +10,7 @@ from pathlib import Path
 from playwright.sync_api import expect, sync_playwright
 
 
-def exercise(context, screenshot, extension_id=None):
+def exercise(context, screenshot, extension_id=None, guide_dir=None):
     state = {"business": "compensation", "status": 200, "switched": False, "calls": 0}
     requests = []
 
@@ -40,6 +40,19 @@ def exercise(context, screenshot, extension_id=None):
     expect(page.locator("#open")).to_be_enabled()
     expect(page.locator("#reminder")).not_to_be_checked()
     assert not requests
+    if guide_dir:
+        guide_dir.mkdir(parents=True, exist_ok=True)
+        page.screenshot(path=guide_dir / "start.png", full_page=True)
+        manager = context.new_page()
+        manager.goto("chrome://extensions/")
+        expect(manager.locator("extensions-item").filter(has_text="GLaDOS")).to_be_visible()
+        dev_mode = manager.locator("#devMode")
+        if not dev_mode.evaluate("toggle => toggle.checked"):
+            dev_mode.click()
+        manager.locator("#loadUnpacked").click(trial=True)
+        manager.screenshot(path=guide_dir / "installed.png", animations="disabled")
+        manager.close()
+        page.bring_to_front()
     page.locator("#refresh").click()
     expect(page.locator("#feedback")).to_have_text(page.evaluate("chrome.i18n.getMessage('noTab')"))
     with context.expect_page() as created:
@@ -57,14 +70,20 @@ def exercise(context, screenshot, extension_id=None):
     page.locator("#refresh").click()
     expect(page.locator("#points")).to_have_text("37")
     expect(page.locator("#status")).to_have_text(page.evaluate("chrome.i18n.getMessage('unknown')"))
+    if guide_dir:
+        page.screenshot(path=guide_dir / "compensation.png", full_page=True)
     state["business"] = "system:checkin"
     page.locator("#refresh").click()
     expect(page.locator("#status")).to_have_text(page.evaluate("chrome.i18n.getMessage('confirmed')"))
     expect(page.locator("#account")).to_contain_text("s•••@example.test")
     if screenshot:
         page.screenshot(path=str(screenshot))
+    if guide_dir:
+        page.screenshot(path=guide_dir / "credited.png", full_page=True)
     page.set_viewport_size({"width":375,"height":800})
     assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
+    if guide_dir:
+        page.screenshot(path=guide_dir / "narrow.png")
     state["switched"] = True
     state["calls"] = 0
     page.locator("#refresh").click()
@@ -73,11 +92,20 @@ def exercise(context, screenshot, extension_id=None):
     state.update(switched=False, status=401)
     page.locator("#refresh").click()
     expect(page.locator("#feedback")).to_have_text(page.evaluate("chrome.i18n.getMessage('login')"))
+    state["status"] = 403
+    page.locator("#refresh").click()
+    expect(page.locator("#feedback")).to_have_text(page.evaluate("chrome.i18n.getMessage('access')"))
+    expect(page.locator("#points")).to_have_text("—")
+    if guide_dir:
+        page.set_viewport_size({"width":1250,"height":850})
+        page.screenshot(path=guide_dir / "access.png")
     page.locator("#reminder").check()
     expect(page.locator("#open")).to_be_enabled()
     assert page.evaluate("async () => Boolean(await chrome.alarms.get('daily-reminder'))")
     page.reload()
     expect(page.locator("#reminder")).to_be_checked()
+    if guide_dir:
+        page.locator(".settings").screenshot(path=guide_dir / "reminder.png")
     page.locator("#reminder").uncheck()
     expect(page.locator("#open")).to_be_enabled()
     assert not page.evaluate("async () => Boolean(await chrome.alarms.get('daily-reminder'))")
@@ -93,6 +121,7 @@ if __name__ == "__main__":
     parser.add_argument("extension", type=Path)
     parser.add_argument("executable", type=Path)
     parser.add_argument("--screenshot", type=Path)
+    parser.add_argument("--guide-dir", type=Path, help="Save illustrated guide steps from the local fixture")
     parser.add_argument("--cdp-install", action="store_true", help="Load unpacked using the browser's Extensions test API")
     args = parser.parse_args()
     extension = str(args.extension.resolve())
@@ -111,6 +140,6 @@ if __name__ == "__main__":
             if args.cdp_install:
                 session = context.browser.new_browser_cdp_session()
                 extension_id = session.send("Extensions.loadUnpacked", {"path":extension})["id"]
-            exercise(context, args.screenshot, extension_id)
+            exercise(context, args.screenshot, extension_id, args.guide_dir)
         finally:
             context.close()

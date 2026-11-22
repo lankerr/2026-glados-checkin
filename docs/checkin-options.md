@@ -16,6 +16,8 @@
 
 ## 试用独立工作台
 
+第一次安装可跟着[工作台图解与 Docker 实验](desk-walkthrough.md)操作，里面有余额相同、入账类型不同的两张对照图。
+
 1. 在本试用 PR 的检查列表打开 **Desk pilot** 运行摘要，从 **Artifacts** 下载 `glados-desk-pilot` 并解压。里面有 Chromium 和 Firefox 两个 ZIP。也可以从包含 `webextension/` 的分支根目录运行 `python webextension/build.py --out dist`，直接得到可加载的目录和 ZIP。
 2. 在浏览器新建一个专用于试用的配置。Chrome / Edge 解压 Chromium 包，在扩展管理页点「加载已解压的扩展程序」，选含 `manifest.json` 的目录。Firefox 140 及以上用「临时载入附加组件」打开 Firefox 包里的 `manifest.json`，重启后需重新载入。[安装说明与权限](../webextension/README.md)
 3. 点击工作台图标，选官网域名。在试用配置中登录自己的账号。今天已有定时签到的，直接点「核对官网流水」。当天有带签到标签的正数入账，页面会显示「官网已有签到入账」。只有余额、补偿积分或缺少签到标签时，仍显示待确认。切换账号或退出登录后重新核对，旧读数会清空。
@@ -33,6 +35,6 @@
 | 多账号隔离与重复提交保护（草稿 PR #38） | 给每次运行独立会话，核实账号，并在提交结果不确定时停止重试。草稿与主线有冲突，仍待整合和验收。 | 感谢 @lankerr 整理风险、提交隔离方案和离线测试。[PR #38](https://github.com/lankerr/2026-glados-checkin/pull/38) |
 | 手机上完成日常签到（Issue #40） | 目前可在手机浏览器打开官网。工作台的窄屏布局已在桌面测试，手机扩展安装与提醒仍待实机验证。 | 感谢 @chengchang1987-cloud 提出手机端使用需求。[Issue #40](https://github.com/lankerr/2026-glados-checkin/issues/40) |
 | 按官网 Current Index 提醒（Issue #45） | 建议提醒用户何时查看官网。目前仍在确认数据来源和指标含义，与签到积分之间的关系尚待证实。 | 感谢 @luckyboychn-ship 提出指标提醒建议。[Issue #45](https://github.com/lankerr/2026-glados-checkin/issues/45) |
-| 在 NAS 上运行（Issue #51，已关闭） | 飞牛 OS 用户报告在自用环境中运行了修改过的脚本。提问者最后表示准备试用群晖；讨论中没有群晖成功记录，本次也未在 NAS 上实测。 | 感谢 @Takdrift 提出 NAS / Docker 需求，@DyeDye-diyung 分享飞牛经验，@luckyboychn-ship 补充人工验证的使用场景。[Issue #51](https://github.com/lankerr/2026-glados-checkin/issues/51) |
+| 在 NAS 上运行（Issue #51，已关闭） | 飞牛 OS 用户报告在自用环境中运行了修改过的脚本。项目的[只读日报实验](desk-walkthrough.md#container)已在 AMD64 原生、ARM64 模拟容器和本机 Compose 中跑通。群晖实机和 NAS 定时签到仍待验证。 | 感谢 @Takdrift 提出 NAS / Docker 需求，@DyeDye-diyung 分享飞牛经验，@luckyboychn-ship 补充人工验证的使用场景。[Issue #51](https://github.com/lankerr/2026-glados-checkin/issues/51) |
 
 本项目为社区工具。请仅在本人或获得明确授权的账号上使用，并遵守服务规则。遇到官网要求的人机验证，请本人在官网完成。签到结果和奖励以账号的实际流水为准。

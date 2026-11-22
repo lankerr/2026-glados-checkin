@@ -76,7 +76,7 @@ def fixture(tls, requests):
     return Handler
 
 
-def run(binary, geckodriver, archive):
+def run(binary, geckodriver, archive, screenshot=None):
     addon = 'checkin-desk@lankerr.github.io'
     internal_id = str(uuid.uuid4())
     requests = []
@@ -119,6 +119,9 @@ def run(binary, geckodriver, archive):
                     assert element('points').text == '17', (element('feedback').text, requests)
                     assert 'q•••@example.test' in element('account').text
                     assert element('status').text == driver.execute_script("return browser.i18n.getMessage('confirmed')")
+                    if screenshot:
+                        if not driver.save_screenshot(str(screenshot)):
+                            raise OSError("Could not save the Firefox screenshot")
                     element('reminder').click()
                     wait.until(lambda _: element('open').is_enabled())
                     assert driver.execute_async_script("const done=arguments[0];browser.alarms.get('daily-reminder').then(a => done(!!a));")
@@ -132,5 +135,6 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     for name in ('binary','geckodriver','archive'):
         parser.add_argument(name, type=Path)
+    parser.add_argument('--screenshot', type=Path)
     args = parser.parse_args()
-    run(args.binary.resolve(), args.geckodriver.resolve(), args.archive.resolve())
+    run(args.binary.resolve(), args.geckodriver.resolve(), args.archive.resolve(), args.screenshot)

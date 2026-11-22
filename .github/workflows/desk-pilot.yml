@@ -5,12 +5,25 @@ on:
     paths:
       - 'webextension/**'
       - 'extension/icons/**'
+      - 'docs/examples/ledger/**'
+      - 'update_streak.py'
+      - 'checkin.py'
+      - 'tests/test_update_streak.py'
       - '.github/workflows/desk-pilot.yml'
 
 permissions:
   contents: read
 
 jobs:
+  ledger-demo:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v6
+      - run: docker build -f docs/examples/ledger/Dockerfile -t glados-ledger-guide .
+      - run: docker run --rm --network none --read-only glados-ledger-guide
+      - run: docker run --rm --network none --read-only --tmpfs /tmp glados-ledger-guide python -m unittest discover -s tests -p test_update_streak.py
+
   package:
     runs-on: ubuntu-latest
     timeout-minutes: 5
