@@ -23,6 +23,16 @@
 
 打包 zip 时必须带上 `_locales` 目录，否则会报 `Default locale was specified, but _locales subtree is missing.`
 
+## 结果识别与测试
+
+内容脚本只把**当前官网源上、路径恰为 `/api/user/checkin` 的 POST 响应**记为签到结果：GET、`/api/user/checkin/challenge`（人机验证准备阶段）、跨源同名路径与同源其他前缀一律不算，避免把 200 的验证响应误报为已入账。按钮点击优先用页面结构 `button.ckb`，文案兜底覆盖英文 `Check in` 与中文「签到」。
+
+匹配逻辑是纯函数，可用 Node 离线验证（CI 同步执行）：
+
+```sh
+node --test extension/tests/*.test.cjs
+```
+
 ## 使用
 
 - 什么都不用做：到点自动开页签到后关页，弹系统通知告知结果。关窗口前请先打开「关闭浏览器后继续运行后台应用」
