@@ -1,0 +1,157 @@
+{
+  "permission": { "message": "Allow access to the selected site in the browser’s extension settings, then try again." },
+  "viewSite": { "message": "View official page ↗" },
+  "name": {
+    "message": "GLaDOS Check-in Desk"
+  },
+  "description": {
+    "message": "Open the official check-in page and review its points ledger alongside local activity."
+  },
+  "lang": {
+    "message": "en"
+  },
+  "consoleTitle": {
+    "message": "Check-in desk"
+  },
+  "site": {
+    "message": "Site"
+  },
+  "today": {
+    "message": "Today's check-in"
+  },
+  "balance": {
+    "message": "Points balance"
+  },
+  "open": {
+    "message": "Open official check-in ↗"
+  },
+  "refresh": {
+    "message": "Read official ledger"
+  },
+  "ledger": {
+    "message": "Official points ledger"
+  },
+  "latest": {
+    "message": "Latest 10 valid entries"
+  },
+  "time": {
+    "message": "UTC+8"
+  },
+  "type": {
+    "message": "Entry"
+  },
+  "change": {
+    "message": "Change"
+  },
+  "activity": {
+    "message": "Local activity"
+  },
+  "clear": {
+    "message": "Clear history"
+  },
+  "noActivity": {
+    "message": "No local activity yet."
+  },
+  "remind": {
+    "message": "Daily reminder"
+  },
+  "remindHint": {
+    "message": "Shows a notification while the browser is running. Click it to open this desk."
+  },
+  "remindTime": {
+    "message": "09:30 UTC+8"
+  },
+  "reminderText": {
+    "message": "Time to check in. Click to open your desk."
+  },
+  "confirmed": {
+    "message": "Check-in credit recorded"
+  },
+  "unknown": {
+    "message": "No check-in entry found today"
+  },
+  "notRead": {
+    "message": "Today's ledger is unread"
+  },
+  "confirmedHint": {
+    "message": "The official ledger contains a check-in credit dated today."
+  },
+  "actionHint": {
+    "message": "Complete check-in and any verification on the official site, then read the ledger here."
+  },
+  "accountHint": {
+    "message": "Read the ledger to see the account and timestamp."
+  },
+  "unreadLedger": {
+    "message": "Read the ledger to see the site's latest points activity."
+  },
+  "emptyLedger": {
+    "message": "The ledger returned no displayable entries."
+  },
+  "missingLedger": {
+    "message": "The site returned a balance without an entry list."
+  },
+  "checkin": {
+    "message": "Check-in"
+  },
+  "refund": {
+    "message": "Refund"
+  },
+  "exchange": {
+    "message": "Redemption"
+  },
+  "promotion": {
+    "message": "Promotion"
+  },
+  "compensation": {
+    "message": "Compensation"
+  },
+  "other": {
+    "message": "Other / unspecified"
+  },
+  "opened": {
+    "message": "Opened official check-in"
+  },
+  "read": {
+    "message": "Read official ledger"
+  },
+  "readFailed": {
+    "message": "Ledger read failed"
+  },
+  "working": {
+    "message": "Working…"
+  },
+  "afterOpen": {
+    "message": "Finish on the official site, then return to this tab."
+  },
+  "saved": {
+    "message": "Settings saved."
+  },
+  "cleared": {
+    "message": "Local activity cleared."
+  },
+  "login": {
+    "message": "Sign in on the official tab, then read again."
+  },
+  "access": {
+    "message": "The site restricted access. Complete verification on the site, then read again."
+  },
+  "identity": {
+    "message": "The site did not confirm an account. Check your current sign-in."
+  },
+  "unavailable": {
+    "message": "Could not read the site. Check the connection and try again."
+  },
+  "switched": {
+    "message": "The site or account changed. Read again."
+  },
+  "multiple": {
+    "message": "Several check-in tabs match. Keep the one you want in this window, then try again."
+  },
+  "noTab": {
+    "message": "Open the selected site's check-in page and sign in, then read again."
+  },
+  "reload": {
+    "message": "Reload the official check-in tab, wait for it to load, then read again."
+  }
+}

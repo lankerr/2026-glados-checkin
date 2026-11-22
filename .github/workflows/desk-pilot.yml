@@ -1,0 +1,28 @@
+name: Desk pilot
+
+on:
+  pull_request:
+    paths:
+      - 'webextension/**'
+      - 'extension/icons/**'
+      - '.github/workflows/desk-pilot.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: node --test webextension/tests/core.test.cjs
+      - run: python3 webextension/build.py --out dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: glados-desk-pilot
+          path: dist/*.zip
+          if-no-files-found: error
