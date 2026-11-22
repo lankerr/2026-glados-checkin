@@ -12,6 +12,7 @@
 | 在浏览器里看签到是否入账 | **独立工作台 0.2.1，桌面试用版。** 人在官网操作，点击「核对官网流水」后才读取账号和积分。可选本地 09:30 提醒，初始关闭。安装方法见下节。 | 感谢 @lankerr 开发工作台，感谢 @Unexpectedlyc 为经典扩展补齐中英语言包和安装说明。[#44](https://github.com/lankerr/2026-glados-checkin/pull/44) |
 | 已经在用经典浏览器插件 | [经典插件](../extension/README.md)按时段尝试签到。中文按钮识别和结果误判已有反馈，使用者可在官网查流水。它和独立工作台是两个扩展。 | 感谢 @Unexpectedlyc 修复经典插件加载，感谢 @EchoChan314 提交中文页面的故障原因和修复提案。[#44](https://github.com/lankerr/2026-glados-checkin/pull/44) · [#50](https://github.com/lankerr/2026-glados-checkin/pull/50) |
 | 在微信或 Telegram 收到运行结果 | 在[使用手册](usage.md)选择通知渠道。消息中的「查询失败」表示这次没读到有效数据，可回官网核对。 | 感谢 @Ch3nSir 添加 Server酱 Turbo / Server酱³，感谢 @Initsnow 添加 Telegram 推送及通知级别。[#27](https://github.com/lankerr/2026-glados-checkin/pull/27) · [#3](https://github.com/lankerr/2026-glados-checkin/pull/3) |
+| 在 NixOS 管理本地任务 | 主线已有 [NixOS 模块](../glados-checkin.nix)，可以用 systemd 管理服务与定时器。PR #47 提出的浏览器驱动另列在下表。 | 感谢 @Initsnow 提供 Flake 和模块，感谢 @Ch3nSir 补充通知配置。[#3](https://github.com/lankerr/2026-glados-checkin/pull/3) · [#27](https://github.com/lankerr/2026-glados-checkin/pull/27) |
 
 ## 试用独立工作台
 
@@ -32,5 +33,6 @@
 | 多账号隔离与重复提交保护（草稿 PR #38） | 给每次运行独立会话，核实账号，并在提交结果不确定时停止重试。草稿与主线有冲突，仍待整合和验收。 | 感谢 @lankerr 整理风险、提交隔离方案和离线测试。[PR #38](https://github.com/lankerr/2026-glados-checkin/pull/38) |
 | 手机上完成日常签到（Issue #40） | 目前可在手机浏览器打开官网。工作台的窄屏布局已在桌面测试，手机扩展安装与提醒仍待实机验证。 | 感谢 @chengchang1987-cloud 提出手机端使用需求。[Issue #40](https://github.com/lankerr/2026-glados-checkin/issues/40) |
 | 按官网 Current Index 提醒（Issue #45） | 建议提醒用户何时查看官网。目前仍在确认数据来源和指标含义，与签到积分之间的关系尚待证实。 | 感谢 @luckyboychn-ship 提出指标提醒建议。[Issue #45](https://github.com/lankerr/2026-glados-checkin/issues/45) |
+| 在 NAS 上运行（Issue #51，已关闭） | 飞牛 OS 用户报告在自用环境中运行了修改过的脚本。提问者最后表示准备试用群晖；讨论中没有群晖成功记录，本次也未在 NAS 上实测。 | 感谢 @Takdrift 提出 NAS / Docker 需求，@DyeDye-diyung 分享飞牛经验，@luckyboychn-ship 补充人工验证的使用场景。[Issue #51](https://github.com/lankerr/2026-glados-checkin/issues/51) |
 
 本项目为社区工具。请仅在本人或获得明确授权的账号上使用，并遵守服务规则。遇到官网要求的人机验证，请本人在官网完成。签到结果和奖励以账号的实际流水为准。
