@@ -1,6 +1,6 @@
 # GLaDOS 签到怎么选
 
-如果已有定时签到，只想知道今天有没有入账，直接看云端日报。想在浏览器里自己确认账号、完成官网验证并查看流水，可以在**单独的浏览器配置**里试用签到工作台。以下状态核对于 2026-11-22。
+如果已有定时签到，只想知道今天有没有入账，直接看云端日报。想在浏览器里自己确认账号、完成官网验证并查看流水，可以在**单独的浏览器配置**里试用签到工作台。以下状态核对于 2026-11-23。
 
 ## 可使用的方案
 
@@ -31,9 +31,11 @@
 | 提案 | 解决的问题与当前状态 | 致谢和讨论 |
 | --- | --- | --- |
 | 用系统浏览器运行（PR #47） | 让 Linux / NixOS 用户复用已安装的浏览器，减少安装依赖。仍在审阅；调试连接能接触登录会话，连接目标和账号隔离是待解决的问题。此次工作台试用没有启用该驱动。 | 感谢 @Initsnow 提供实现、NixOS 配置与测试。[PR #47](https://github.com/lankerr/2026-glados-checkin/pull/47) |
-| 修复经典插件的中文按钮和结果识别（PR #50） | 中文「签到」按钮可能找不到，准备验证的响应也可能被当成成功。贡献者提交了两个修复。PR 仍在审阅；独立工作台按官网流水判断入账。 | 感谢 @EchoChan314 在中文 Edge 定位问题并提交修复。[PR #50](https://github.com/lankerr/2026-glados-checkin/pull/50) |
+| 经典插件的中文按钮和结果识别（PR #50、#53） | 中文「签到」按钮可能找不到，准备验证的响应也可能被当成成功。#53 已补上同源、完整路径及方法匹配，CI 通过，尚待合并。 | 感谢 @EchoChan314 在中文 Edge 定位并提交修复，@lankerr 补充严格匹配和离线测试。[PR #50](https://github.com/lankerr/2026-glados-checkin/pull/50) · [PR #53](https://github.com/lankerr/2026-glados-checkin/pull/53) |
+| 经典插件重复打开标签页（PR #56） | 提案给同时触发的任务去重。在模拟中发现，已转到其他网站的标签页、未被当前任务跟踪的发送方标签页都可能被关闭。作者已收到两处评审意见，修订待验。 | 感谢 @EchoChan314 定位重复开页的触发条件。[PR #56 评审](https://github.com/lankerr/2026-glados-checkin/pull/56#pullrequestreview-6024576241) |
+| 日报显示「积分流水读取失败」（Issue #55、PR #57） | 修复版按账号解析 Cookie，可在 Actions 摘要里看见哪一个账号读取失败，以及 HTTP 状态或错误类别。已通过真实只读核对，仍待合并。 | 感谢 @goehou 提供旧版报错，@lankerr 补充修复与测试。[Issue #55](https://github.com/lankerr/2026-glados-checkin/issues/55) · [PR #57](https://github.com/lankerr/2026-glados-checkin/pull/57) |
 | 多账号隔离与重复提交保护（草稿 PR #38） | 给每次运行独立会话，核实账号，并在提交结果不确定时停止重试。草稿与主线有冲突，仍待整合和验收。 | 感谢 @lankerr 整理风险、提交隔离方案和离线测试。[PR #38](https://github.com/lankerr/2026-glados-checkin/pull/38) |
-| 手机上完成日常签到（Issue #40） | 目前可在手机浏览器打开官网。工作台的窄屏布局已在桌面测试，手机扩展安装与提醒仍待实机验证。 | 感谢 @chengchang1987-cloud 提出手机端使用需求。[Issue #40](https://github.com/lankerr/2026-glados-checkin/issues/40) |
+| 手机上完成日常签到（Issue #40、PR #54） | 手机可直接打开官网。安卓 Termux 提案已通过离线测试，真机唤醒和通知送达待验。工作台的手机扩展安装也仍待实机验证。 | 感谢 @chengchang1987-cloud 提出手机端需求，@lankerr 提交安卓提案。[Issue #40](https://github.com/lankerr/2026-glados-checkin/issues/40) · [PR #54](https://github.com/lankerr/2026-glados-checkin/pull/54) |
 | 按官网 Current Index 提醒（Issue #45） | 建议提醒用户何时查看官网。目前仍在确认数据来源和指标含义，与签到积分之间的关系尚待证实。 | 感谢 @luckyboychn-ship 提出指标提醒建议。[Issue #45](https://github.com/lankerr/2026-glados-checkin/issues/45) |
 | 在 NAS 上运行（Issue #51，已关闭） | 飞牛 OS 用户报告在自用环境中运行了修改过的脚本。项目的[只读日报实验](desk-walkthrough.md#container)已在 AMD64 原生、ARM64 模拟容器和本机 Compose 中跑通。群晖实机和 NAS 定时签到仍待验证。 | 感谢 @Takdrift 提出 NAS / Docker 需求，@DyeDye-diyung 分享飞牛经验，@luckyboychn-ship 补充人工验证的使用场景。[Issue #51](https://github.com/lankerr/2026-glados-checkin/issues/51) |
 
