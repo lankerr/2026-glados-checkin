@@ -16,15 +16,24 @@
     return;
   }
 
+  // 只认真正的签到接口（POST /api/user/checkin），排除 /api/user/checkin/challenge
+  const isCheckinApi = (url) => {
+    try {
+      const u = new URL(String(url), location.origin);
+      return u.pathname.endsWith('/user/checkin');
+    } catch (e) { return false; }
+  };
+
   // ---- 捕获 axios(XHR) / fetch 的签到响应 ----
   const origOpen = XMLHttpRequest.prototype.open;
   const origSend = XMLHttpRequest.prototype.send;
   XMLHttpRequest.prototype.open = function (method, url, ...rest) {
     this._gladosUrl = String(url);
+    this._gladosMethod = String(method || '').toUpperCase();
     return origOpen.call(this, method, url, ...rest);
   };
   XMLHttpRequest.prototype.send = function (body) {
-    if (this._gladosUrl && this._gladosUrl.includes('/api/user/checkin')) {
+    if (this._gladosMethod === 'POST' && isCheckinApi(this._gladosUrl)) {
       this.addEventListener('load', () => {
         try { send({ type: 'checkin-result', result: JSON.parse(this.responseText) }); }
         catch (e) { send({ type: 'checkin-result', result: { code: -1, message: t('parseError') } }); }
@@ -36,16 +45,18 @@
   window.fetch = function (input, init) {
     const p = origFetch.apply(this, arguments);
     const url = typeof input === 'string' ? input : (input && input.url) || '';
-    if (url.includes('/api/user/checkin')) {
+    const method = String((init && init.method) || (input && input.method) || 'GET').toUpperCase();
+    if (method === 'POST' && isCheckinApi(url)) {
       p.then(r => r.clone().json().then(j => send({ type: 'checkin-result', result: j })).catch(() => {}));
     }
     return p;
   };
 
-  // ---- 等待并点击 Check in ----
+  // ---- 等待并点击签到按钮（页面结构优先，文案中英文兜底） ----
   const findButton = () =>
+    document.querySelector('button.ckb') ||
     [...document.querySelectorAll('button')].find(b =>
-      /check\s*in/i.test((b.textContent || '').trim()) || /check\s*in/i.test(b.getAttribute('aria-label') || ''));
+      /check\s*-?\s*in|签到/i.test(((b.textContent || '') + ' ' + (b.getAttribute('aria-label') || '')).trim()));
 
   const deadline = Date.now() + 60000; // 页面自身等 Turnstile 最多 ~90s，按钮先出现的等点击
   const timer = setInterval(() => {

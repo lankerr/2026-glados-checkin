@@ -103,21 +103,61 @@ function notify(id, title, message) {
 }
 
 // ---------- 调度 ----------
-async function runSlot(reason) {
+// 安装/启动/三个 alarm/popup 手动都可能同时触发 runSlot，必须去重，否则会开出多个相同的 tab
+let running = false;
+// 自动打开的签到页超过该时长仍未回传结果（例如站点重定向抹掉了 #glados-auto），视为失效
+const AUTO_TAB_MAX_AGE = 5 * 60 * 1000;
+
+async function dropAutoTab() {
+  await setState({ autoTabId: null, autoTabAt: '' });
+}
+
+// 已有本扩展打开的签到页在等结果时不重复开页；页面已失效则关闭后重新开
+async function hasPendingAutoTab() {
   const s = await getState();
-  const today = bjToday();
-  const ledger = await readLedger();
-  if (!ledger) {
-    notify('net', t('notifyNetTitle'), t('notifyNetMessage'));
-    return;
+  if (!s.autoTabId) return false;
+  let tab = null;
+  try { tab = await chrome.tabs.get(s.autoTabId); } catch (e) { tab = null; }
+  const url = (tab && (tab.url || tab.pendingUrl)) || '';
+  const stillWaiting = tab && url.includes('/console/checkin') &&
+    Date.now() - Date.parse(s.autoTabAt || '') <= AUTO_TAB_MAX_AGE;
+  if (stillWaiting) return true;
+  if (tab) chrome.tabs.remove(tab.id).catch(() => {});
+  await dropAutoTab();
+  return false;
+}
+
+// 关闭自动签到页并清掉记录（content script 上报结果或未登录时走这里）
+async function closeSenderTab(tab) {
+  if (!tab) return;
+  const s = await getState();
+  if (s.autoTabId === tab.id) await dropAutoTab();
+  chrome.tabs.remove(tab.id).catch(() => {});
+}
+
+async function runSlot(reason) {
+  if (running) return;
+  running = true;
+  try {
+    if (await hasPendingAutoTab()) return; // 已有签到页在等待结果
+    const s = await getState();
+    const today = bjToday();
+    const ledger = await readLedger();
+    if (!ledger) {
+      notify('net', t('notifyNetTitle'), t('notifyNetMessage'));
+      return;
+    }
+    await advanceStreak(ledger);
+    await updateBadge();
+    if (s.lastDoneDate === today || ledger.todayCount > 0) {
+      await setState({ lastDoneDate: today });
+      return; // 今日已在别处入账（本地脚本/手动），扩展不开页
+    }
+    const tab = await chrome.tabs.create({ url: ORIGIN + '/console/checkin#glados-auto', active: false });
+    await setState({ autoTabId: tab.id, autoTabAt: new Date().toISOString() });
+  } finally {
+    running = false;
   }
-  await advanceStreak(ledger);
-  await updateBadge();
-  if (s.lastDoneDate === today || ledger.todayCount > 0) {
-    await setState({ lastDoneDate: today });
-    return; // 今日已在别处入账（本地脚本/手动），扩展不开页
-  }
-  chrome.tabs.create({ url: ORIGIN + '/console/checkin#glados-auto', active: false });
 }
 
 chrome.runtime.onInstalled.addListener((details) => {
@@ -144,6 +184,12 @@ chrome.runtime.onStartup.addListener(() => runSlot('startup'));
 chrome.alarms.onAlarm.addListener(a => { if (a.name.startsWith('slot-')) runSlot('alarm'); });
 
 // ---------- 来自 content script 的结果 ----------
+// 用户手动关掉自动签到页时也要清理记录，否则后续调度会一直以为它还在
+chrome.tabs.onRemoved.addListener(async (tabId) => {
+  const s = await getState();
+  if (s.autoTabId === tabId) await dropAutoTab();
+});
+
 chrome.runtime.onMessage.addListener((msg, sender, respond) => {
   (async () => {
     if (msg.type === 'checkin-result') {
@@ -158,11 +204,11 @@ chrome.runtime.onMessage.addListener((msg, sender, respond) => {
       } else {
         notify('fail', t('notifyFailTitle'), String(r.message || t('notifyFailFallback')));
       }
-      if (sender.tab) chrome.tabs.remove(sender.tab.id).catch(() => {});
+      await closeSenderTab(sender.tab);
       respond({ ok: true });
     } else if (msg.type === 'need-login') {
       notify('login', t('notifyLoginTitle'), t('notifyLoginMessage'));
-      if (sender.tab) chrome.tabs.remove(sender.tab.id).catch(() => {});
+      await closeSenderTab(sender.tab);
       respond({ ok: true });
     } else if (msg.type === 'manual-run') {
       await runSlot('manual');
