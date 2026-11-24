@@ -1,0 +1,6 @@
+services:
+  ledger:
+    image: glados-ledger-guide:0.2.1
+    network_mode: none
+    read_only: true
+    restart: "no"

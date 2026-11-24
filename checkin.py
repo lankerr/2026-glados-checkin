@@ -544,6 +544,35 @@ def checkin_with_retry(client, attempts=3, delay_seconds=60):
 
 # ================= 核心逻辑 =================
 
+def points_read_error(result):
+    """Return only fixed categories and bounded numeric codes for a failed read."""
+    if not isinstance(result, dict):
+        return '响应格式异常，未读到积分数据'
+    status = result.get('http_status')
+    if type(status) is int and 400 <= status <= 599:
+        if status == 401:
+            return 'HTTP 401，会话未通过认证，请在官网确认登录状态'
+        if status == 403:
+            return 'HTTP 403，访问被拒绝，请在官网查看访问提示'
+        return f'HTTP {status}，积分服务请求失败'
+    if result.get('invalid_headers') is True:
+        return '请求头格式无效，请检查 Cookie 和 User-Agent 的配置格式'
+    if result.get('invalid_response') is True:
+        return '响应格式异常，未读到有效 JSON'
+    if result.get('timed_out') is True:
+        return '积分服务请求超时'
+    if result.get('request_failed') is True:
+        return '网络或积分服务请求失败'
+    code = result.get('code', 0)
+    if not ((type(code) is int and code == 0) or code == '0'):
+        if type(code) is int and -999 <= code <= 999:
+            return f'积分接口返回错误（code={code}）'
+        return '积分接口返回错误'
+    if parse_finite_number(result.get('points')) is None:
+        return '响应缺少有效的积分余额'
+    return ''
+
+
 class GLaDOS:
     def __init__(self, cookie):
         self.cookie = cookie
@@ -551,6 +580,7 @@ class GLaDOS:
         self.email = "?"
         self.left_days = "?"
         self.points = "?"
+        self.points_error = ''
         self.points_change = "?"
         self.points_change_time = "未知"
         self.today_positive_change = None
@@ -635,7 +665,8 @@ class GLaDOS:
     def get_points(self):
         """获取积分、变化历史、兑换计划"""
         res = self.req('GET', '/api/user/points')
-        if res and 'points' in res:
+        self.points_error = points_read_error(res)
+        if not self.points_error:
             # 当前积分（保留非零小数，不因 split('.') 截断小数奖励）
             formatted_pts = format_points_number(res.get('points', '0'), signed=False)
             self.points = formatted_pts if formatted_pts is not None else '0'
