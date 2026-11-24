@@ -24,5 +24,5 @@ export GLADOS_BROWSER_CHECKIN=0
 OUTPUT="$(python "$ENGINE" 2>&1)"
 CODE=$?
 printf '%s\n' "$OUTPUT"
-python "$HERE/notify.py" --code "$CODE" "$OUTPUT" || true
+printf '%s\n' "$OUTPUT" | python "$HERE/notify.py" --code "$CODE" || true
 exit "$CODE"

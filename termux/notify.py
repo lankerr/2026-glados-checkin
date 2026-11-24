@@ -5,40 +5,42 @@
 main() 仅在真机上执行，termux-notification 不存在时静默降级为打印摘要。
 """
 import argparse
+import re
 import shutil
 import subprocess
 import sys
 
-# 通知正文最多保留的行数与单行长度（termux-notification 抽屉里过长的正文会被截断）
-MAX_BODY_LINES = 12
-MAX_LINE_CHARS = 120
-TITLE_SUCCESS = "GLaDOS 签到完成"
-TITLE_FAILURE = "GLaDOS 签到失败"
+ACCOUNT_RESULT = re.compile(
+    r"^\[\d{4}-\d\d-\d\d \d\d:\d\d:\d\d 北京时间\] (✅|❌) 账号 [1-9]\d* "
+    r"\| 积分: [^|]* \| 入账核验: .*? \| 天数: [^|]* \| 结果: "
+)
+TITLE_SUCCESS = "GLaDOS 签到接口返回成功"
+TITLE_FAILURE = "GLaDOS 有账号签到失败"
+TITLE_ERROR = "GLaDOS 运行异常（结果待核对）"
 TITLE_UNKNOWN = "GLaDOS 签到结束（结果待核对）"
 
 
-def _clip(line):
-    line = line.rstrip()
-    return line if len(line) <= MAX_LINE_CHARS else line[: MAX_LINE_CHARS - 1] + "…"
-
-
 def summarize(output_text, exit_code):
-    """从引擎输出提炼 (title, body)。
-
-    规则：出现 ❌ 按失败处理；只有 ✅/⏭️ 按完成处理；引擎以非零退出码
-    结束且没有明确标记时按待核对处理（非零退出也可能只是推送渠道问题）。
-    """
-    lines = [_clip(line) for line in (output_text or "").splitlines() if line.strip()]
-    body_lines = lines[-MAX_BODY_LINES:]
-    has_fail = any("❌" in line for line in lines)
-    has_done = any("✅" in line or "⏭️" in line for line in lines)
-    if has_fail:
+    """只汇总引擎的账号结果行；锁屏通知仅显示计数。"""
+    success = failure = 0
+    for line in (output_text or "").splitlines():
+        match = ACCOUNT_RESULT.match(line)
+        if match:
+            if match[1] == "✅":
+                success += 1
+            else:
+                failure += 1
+    if failure:
         title = TITLE_FAILURE
-    elif has_done:
+    elif exit_code != 0:
+        title = TITLE_ERROR
+    elif success:
         title = TITLE_SUCCESS
     else:
-        title = TITLE_UNKNOWN if exit_code == 0 else TITLE_FAILURE
-    return {"title": title, "body": "\n".join(body_lines)}
+        title = TITLE_UNKNOWN
+    body = (f"账号结果：成功 {success}，失败 {failure}。积分入账请核对官网流水。"
+            if success or failure else "未读到账号签到结果，请查看本机日志。")
+    return {"title": title, "body": body}
 
 
 def send_local_notification(summary):
@@ -46,13 +48,14 @@ def send_local_notification(summary):
     binary = shutil.which("termux-notification")
     if not binary:
         return False
-    subprocess.run(
-        [binary, "--title", summary["title"], "--content", summary["body"]],
-        check=False,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-    )
-    return True
+    try:
+        proc = subprocess.run(
+            [binary, "--title", summary["title"], "--content", summary["body"]],
+            timeout=15, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    return proc.returncode == 0
 
 
 def main(argv=None):
@@ -66,7 +69,7 @@ def main(argv=None):
     print(summary["title"])
     print(summary["body"])
     if not delivered:
-        print("（未检测到 termux-notification，仅打印摘要）")
+        print("（本地通知命令未成功，仅打印摘要）")
     return 0
 
 
