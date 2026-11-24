@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>GLaDOS</title><link rel="stylesheet" href="console.css"></head>
+<body>
+<header><div class="wrap mast"><span class="brand"><span class="mark" aria-hidden="true">G</span> GLaDOS</span></div></header>
+<main class="wrap">
+  <div class="heading"><div><p class="eyebrow" id="date"></p><h1 data-i="consoleTitle"></h1></div>
+  <label class="picker"><span data-i="site"></span><select id="host" disabled></select></label></div>
+  <section class="summary" aria-labelledby="todayTitle">
+    <div class="primary"><h2 id="todayTitle" data-i="today"></h2><strong id="status" role="status"></strong><p id="hint"></p>
+    <div class="buttons"><button id="open" class="accent" data-i="open" disabled></button><button id="refresh" data-i="refresh" disabled></button></div></div>
+    <div class="balance"><h2 data-i="balance"></h2><strong id="points">—</strong><p id="account"></p></div>
+  </section>
+  <p class="feedback" id="feedback" role="status"></p>
+  <div class="columns"><section class="panel"><div class="panel-head"><h2 data-i="ledger"></h2><small data-i="latest"></small></div>
+  <table id="table" hidden><thead><tr><th data-i="time"></th><th data-i="type"></th><th class="amount" data-i="change"></th></tr></thead><tbody id="rows"></tbody></table><p id="empty" class="empty"></p></section>
+  <section class="panel"><div class="panel-head"><h2 data-i="activity"></h2><button id="clear" class="link" data-i="clear" disabled></button></div><ol id="activity"></ol><p id="noActivity" class="empty" data-i="noActivity"></p></section></div>
+  <section class="settings"><div><h2 data-i="remind"></h2><p data-i="remindHint"></p></div><label><input type="checkbox" id="reminder" disabled><span data-i="remindTime"></span></label></section>
+</main><script src="core.js"></script><script src="console.js"></script></body></html>

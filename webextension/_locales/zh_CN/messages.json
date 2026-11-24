@@ -1,0 +1,157 @@
+{
+  "permission": { "message": "请在浏览器的扩展详情中允许访问所选域名，再回来核对。" },
+  "viewSite": { "message": "查看官网 ↗" },
+  "name": {
+    "message": "GLaDOS 签到台"
+  },
+  "description": {
+    "message": "前往官网签到，在当前浏览器核对积分流水和本地操作。"
+  },
+  "lang": {
+    "message": "zh-CN"
+  },
+  "consoleTitle": {
+    "message": "签到工作台"
+  },
+  "site": {
+    "message": "官网域名"
+  },
+  "today": {
+    "message": "今日签到"
+  },
+  "balance": {
+    "message": "官网积分余额"
+  },
+  "open": {
+    "message": "去官网签到 ↗"
+  },
+  "refresh": {
+    "message": "核对官网流水"
+  },
+  "ledger": {
+    "message": "官网积分流水"
+  },
+  "latest": {
+    "message": "最近 10 条有效记录"
+  },
+  "time": {
+    "message": "北京时间"
+  },
+  "type": {
+    "message": "流水类型"
+  },
+  "change": {
+    "message": "积分变动"
+  },
+  "activity": {
+    "message": "本机操作记录"
+  },
+  "clear": {
+    "message": "清空记录"
+  },
+  "noActivity": {
+    "message": "本机尚无操作记录。"
+  },
+  "remind": {
+    "message": "每日签到提醒"
+  },
+  "remindHint": {
+    "message": "浏览器运行时发送桌面通知，点通知可回到工作台。"
+  },
+  "remindTime": {
+    "message": "北京时间 09:30"
+  },
+  "reminderText": {
+    "message": "可以去官网签到了，点击打开工作台。"
+  },
+  "confirmed": {
+    "message": "官网已有签到入账"
+  },
+  "unknown": {
+    "message": "尚未查到今日签到流水"
+  },
+  "notRead": {
+    "message": "今日流水待核对"
+  },
+  "confirmedHint": {
+    "message": "官网返回了今天的签到流水，入账时间见下表。"
+  },
+  "actionHint": {
+    "message": "在官网完成签到和页面验证后，回来核对积分。"
+  },
+  "accountHint": {
+    "message": "核对后显示账号与读取时间"
+  },
+  "unreadLedger": {
+    "message": "核对后，这里会列出官网返回的积分变动。"
+  },
+  "emptyLedger": {
+    "message": "本次返回的流水中没有可展示的记录。"
+  },
+  "missingLedger": {
+    "message": "官网只返回了余额，未提供流水列表。"
+  },
+  "checkin": {
+    "message": "签到"
+  },
+  "refund": {
+    "message": "退款"
+  },
+  "exchange": {
+    "message": "兑换"
+  },
+  "promotion": {
+    "message": "活动"
+  },
+  "compensation": {
+    "message": "补偿"
+  },
+  "other": {
+    "message": "其他或未标注"
+  },
+  "opened": {
+    "message": "打开官网签到页"
+  },
+  "read": {
+    "message": "已读取官网流水"
+  },
+  "readFailed": {
+    "message": "读取流水失败"
+  },
+  "working": {
+    "message": "处理中…"
+  },
+  "afterOpen": {
+    "message": "在官网完成操作，再回到此页核对。"
+  },
+  "saved": {
+    "message": "设置已保存。"
+  },
+  "cleared": {
+    "message": "已清空本机操作记录。"
+  },
+  "login": {
+    "message": "请在官网标签页登录，然后重新核对。"
+  },
+  "access": {
+    "message": "官网限制了访问，请在官网处理验证后重新核对。"
+  },
+  "identity": {
+    "message": "未能确认官网登录账号，请检查官网登录状态。"
+  },
+  "unavailable": {
+    "message": "暂时无法读取，请检查官网连接后重试。"
+  },
+  "switched": {
+    "message": "站点或账号已切换，请重新核对。"
+  },
+  "multiple": {
+    "message": "当前窗口有多个同域签到页，请保留要核对的一个再试。"
+  },
+  "noTab": {
+    "message": "请先打开所选域名的官网签到页并登录，再回来核对。"
+  },
+  "reload": {
+    "message": "请刷新官网签到页，等待加载完成后重新核对。"
+  }
+}
