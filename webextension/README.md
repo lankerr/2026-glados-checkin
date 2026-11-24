@@ -8,6 +8,8 @@
 
 ## 安装
 
+可从 **[Releases v2026.11.24](https://github.com/lankerr/2026-glados-checkin/releases/tag/v2026.11.24)** 直接下载打包好的浏览器压缩包，或按文末命令从源码构建：
+
 | 浏览器 | 安装包 | 安装入口 |
 | --- | --- | --- |
 | Chrome / Edge | `glados-desk-chromium-0.2.1.zip` | 解压，在 `chrome://extensions` 或 `edge://extensions` 开启开发者模式，选择「加载已解压的扩展程序」，选含 `manifest.json` 的文件夹 |
@@ -28,7 +30,7 @@
 
 点「核对官网流水」时，扩展在选定的官网标签页读取 `/api/user/status` 和 `/api/user/points`，复用该页的登录会话。扩展只在读数时运行站点脚本。余额、流水和脱敏账号随工作台页面关闭而释放。本机存储保存域名偏好、提醒设置和最近 30 次操作的时间、域名及类别。「清空记录」能清除操作历史。
 
-需要原有三时段自动尝试功能，请查看[经典自动插件](../extension/README.md)。
+旧版 `v0.1.x` 自动点击插件因 MV3 隔离世界响应捕获失效、单域名硬编码及后台隐藏页无法完成人机验证已停用，详见[旧版停用与迁移说明](../extension/README.md)。
 
 ## 从源码构建
 

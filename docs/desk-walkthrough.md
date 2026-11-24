@@ -4,15 +4,15 @@
 
 本教程对应工作台 **0.2.1**，实测于 **2026-11-22**。浏览器截图都来自本地模拟账号。Chrome 示例的余额是 37，Firefox 示例的余额是 17。只想核对自己账号的读者看前三节即可，NAS 用户可以直接看[容器实验](#container)。
 
-## 一、在单独的浏览器配置里安装
+## 一、安装签到工作台 0.2.1
 
-1. 从[试用 PR #52](https://github.com/lankerr/2026-glados-checkin/pull/52) 的检查列表进入 **Desk pilot**，打开运行摘要，在 **Artifacts** 下载 `glados-desk-pilot`。下载构建产物需要登录 GitHub。解压外层压缩包后，会看到 Chromium 和 Firefox 两个 ZIP。
-2. 在 Chrome 或 Edge 的头像菜单新建一个浏览器配置，进入新窗口。解压 `glados-desk-chromium-0.2.1.zip`。Chrome 在地址栏输入 `chrome://extensions`，Edge 输入 `edge://extensions`。打开「开发者模式」，点击「加载已解压的扩展程序」，选中能直接看到 `manifest.json` 的那层文件夹。看到下图中的「GLaDOS 签到台 0.2.1」且开关已开启，就可以从工具栏的扩展菜单打开它。[Chrome 安装说明](https://developer.chrome.com/docs/extensions/get-started/tutorial/hello-world)
+1. 前往 **[Releases v2026.11.24](https://github.com/lankerr/2026-glados-checkin/releases/tag/v2026.11.24)** 直接下载 `glados-desk-chromium-0.2.1.zip`（Chrome / Edge）或 `glados-desk-firefox-0.2.1.zip`（Firefox 140+），无需登录即可下载。如浏览器中曾安装旧版 `0.1.x` 插件，请先将其移除。
+2. 解压 `glados-desk-chromium-0.2.1.zip`（首次试用也可以在 Chrome 或 Edge 的头像菜单新建一个独立浏览器配置）。Chrome 在地址栏输入 `chrome://extensions`，Edge 输入 `edge://extensions`。打开「开发者模式」，点击「加载已解压的扩展程序」，选中能直接看到 `manifest.json` 的那层文件夹。看到下图中的「GLaDOS 签到台 0.2.1」且开关已开启，就可以从工具栏的扩展菜单打开它。[Chrome 安装说明](https://developer.chrome.com/docs/extensions/get-started/tutorial/hello-world)
 3. Firefox 用户解压 `glados-desk-firefox-0.2.1.zip`，在 Firefox 140 或更新版本打开 `about:debugging#/runtime/this-firefox`，点击「临时载入附加组件」并选择 `manifest.json`。重启 Firefox 后需再次载入。[Mozilla 临时安装说明](https://extensionworkshop.com/documentation/develop/temporary-installation-in-firefox/)
 
 ![Chrome 扩展管理页中的加载入口、扩展名称、版本和启用开关](assets/desk-guide/installed.png)
 
-如果下载已过期，可以在[试用分支源码](https://github.com/lankerr/2026-glados-checkin/tree/codex/glados-isolated-pilot)根目录运行下面的命令。到 `dist` 里选对应浏览器的文件夹即可。
+如果想从源码自行打包，可在仓库根目录运行下面的命令，到 `dist` 里选对应浏览器的文件夹即可：
 
 ```sh
 python webextension/build.py --out dist
@@ -45,7 +45,7 @@ Firefox 的英文界面里，相同操作叫 **Read official ledger**。另一�
 | 提示「官网限制了访问」 | 打开官网看具体要求。官网出现验证时请本人完成。读取接口返回 403 只能说明访问受限，单凭这个状态码无法判断是否出现了人机验证。 |
 | 有余额，仍提示「尚未查到今日签到流水」 | 看日期和流水类型。只有活动、补偿或不带标签的记录时，保留「待确认」，可稍后再读一次。 |
 | 微信显示「成功 0/1」，积分和天数都是问号 | 看消息的日期，到官网查同一天的流水。没有读数时，问号不能用来计算漏签天数。 |
-| Actions 连续签到日报只提示「积分流水读取失败」 | 旧版会把多种原因显示为同一行。[修复版 #57](https://github.com/lankerr/2026-glados-checkin/pull/57) 在 Summary 里按账号显示 HTTP 状态、超时或配置错误，其他账号仍能单独核对。感谢 @goehou 报告。[Issue #55](https://github.com/lankerr/2026-glados-checkin/issues/55) |
+| Actions 连续签到日报只提示「积分流水读取失败」 | 旧版会把多种原因显示为同一行。[修复版 #57](https://github.com/lankerr/2026-glados-checkin/pull/57) 已合入主线（Fork 用户 Sync fork 即可生效），在 Summary 里按账号显示 HTTP 状态、超时或配置错误，其他账号仍能单独核对。感谢 @goehou 报告。[Issue #55](https://github.com/lankerr/2026-glados-checkin/issues/55) |
 
 ![模拟 403 后，工作台显示访问受限提示并清空余额](assets/desk-guide/access.png)
 
@@ -60,7 +60,7 @@ Firefox 的英文界面里，相同操作叫 **Read official ledger**。另一�
 <a id="container"></a>
 ## 四、NAS 用户先做一个断网也能跑的容器实验
 
-这个实验回答一个具体问题：设备的 Docker 能否运行项目的只读日报，并正确处理签到和补偿混在一起的账本？它使用合成账号和容器内部的 HTTP 服务。准备好 Docker 后，从试用分支的仓库根目录运行，构建阶段需要联网。
+这个实验回答一个具体问题：设备的 Docker 能否运行项目的只读日报，并正确处理签到和补偿混在一起的账本？它使用合成账号和容器内部的 HTTP 服务。准备好 Docker 后，在仓库根目录运行，构建阶段需要联网。
 
 ```sh
 docker build -f docs/examples/ledger/Dockerfile -t glados-ledger-guide:0.2.1 .
@@ -102,7 +102,7 @@ docker run --rm --platform linux/arm64 --network none --read-only glados-ledger-
 | PR #50 的中文页面修复 | 用本地虚构地址单测贡献者的响应路径判断。它能排除准备验证的响应；其他来源的同名路径、同一来源的不同前缀仍可能匹配。工作台直接读取带日期和类型的积分流水。 | 感谢 @EchoChan314 在中文 Edge 找出按钮识别和误报两个问题。[PR #50](https://github.com/lankerr/2026-glados-checkin/pull/50) |
 | 微信和 Telegram 通知 | 16 项离线通知测试通过，覆盖 Server酱请求格式、多渠道分发和诊断模式跳过推送等场景。实际手机收件本轮未测。 | 感谢 @Ch3nSir 提供 Server酱，@Initsnow 提供 Telegram 推送。[PR #27](https://github.com/lankerr/2026-glados-checkin/pull/27) · [PR #3](https://github.com/lankerr/2026-glados-checkin/pull/3) |
 
-在已安装 Nix 的环境，从试用分支根目录可以复查 NixOS 的配置值。命令读取仓库锁定的 nixpkgs，首次求值需要联网。
+在已安装 Nix 的环境，从仓库根目录可以复查 NixOS 的配置值。命令读取仓库锁定的 nixpkgs，首次求值需要联网。
 
 ```sh
 nix --extra-experimental-features 'nix-command flakes' eval --impure --json --file docs/examples/check-timer.nix
