@@ -71,7 +71,7 @@ docker run --rm --network none --read-only glados-ledger-guide:0.2.1
 
 ![在 x86-64 和 ARM64 Linux 容器中运行同一份只读日报得到的终端输出](assets/desk-guide/docker.png)
 
-上图记录的是 Windows 上 Docker Desktop 的实际命令和输出。x86-64 容器原生运行，ARM64 容器在同一台 x86-64 主机上模拟执行，两者均通过。想多查一步，可以运行同一镜像中的三项日报回归测试。看到 `Ran 3 tests` 和 `OK` 即通过。
+上图记录的是 Windows 上 Docker Desktop 的实际输出。x86-64 容器原生运行，ARM64 容器在同一台 x86-64 主机上模拟执行，两者均通过。下面的命令会运行镜像中的日报回归测试。用 `v2026.11.24` 源码构建时，应看到 `Ran 7 tests`，下一行为 `OK`，命令退出码为 0。[发布版 CI 日志](https://github.com/lankerr/2026-glados-checkin/actions/runs/45410511565)
 
 ```sh
 docker run --rm --network none --read-only --tmpfs /tmp glados-ledger-guide:0.2.1 python -m unittest discover -s tests -p test_update_streak.py
@@ -99,7 +99,7 @@ docker run --rm --platform linux/arm64 --network none --read-only glados-ledger-
 | GitHub Actions 的日报 | [打开一次成功运行的日报](https://github.com/lankerr/2026-glados-checkin/actions/runs/44975600453)，在 Summary 读「最近可见签到」和「连续天数」。统计窗口为最近返回的 10 条流水；更早的记录需要其他来源。 | 感谢 @lankerr 补全 `system:checkin` 的识别。[PR #49](https://github.com/lankerr/2026-glados-checkin/pull/49) |
 | NixOS 定时器 | 用模拟配置求值后，主线的任务类型为 `oneshot`，按系统本地时间 09:30 触发，随机延迟最多 10 分钟，`Persistent` 为真。本次验证了生成的配置，未做整机启动或跨天唤醒测试。 | 感谢 @Initsnow 提供 Flake 与 NixOS 模块。[PR #3](https://github.com/lankerr/2026-glados-checkin/pull/3) |
 | PR #47 的系统浏览器方案 | 对 PR 提交 `27b0b1a` 的 NixOS 模块单独求值，读到了新增的状态目录 `glados-checkin` 和工作目录 `%S/glados-checkin`。实测覆盖服务配置；浏览器登录和官网验证仍由用户在官网完成。 | 感谢 @Initsnow 提供部署实现。[PR #47](https://github.com/lankerr/2026-glados-checkin/pull/47) |
-| PR #50 的中文页面修复 | 用本地虚构地址单测贡献者的响应路径判断。它能排除准备验证的响应；其他来源的同名路径、同一来源的不同前缀仍可能匹配。工作台直接读取带日期和类型的积分流水。 | 感谢 @EchoChan314 在中文 Edge 找出按钮识别和误报两个问题。[PR #50](https://github.com/lankerr/2026-glados-checkin/pull/50) |
+| 旧版插件的中文页面修复（PR #50 已关闭） | 这项提案针对旧版插件。离线测试中，它能排除进入验证前的响应，但仍可能误认其他来源的同名路径。0.2.1 工作台直接读取带日期和类型的积分流水。 | 感谢 @EchoChan314 在中文 Edge 找出按钮识别和误报两个问题。[PR #50](https://github.com/lankerr/2026-glados-checkin/pull/50) |
 | 微信和 Telegram 通知 | 16 项离线通知测试通过，覆盖 Server酱请求格式、多渠道分发和诊断模式跳过推送等场景。实际手机收件本轮未测。 | 感谢 @Ch3nSir 提供 Server酱，@Initsnow 提供 Telegram 推送。[PR #27](https://github.com/lankerr/2026-glados-checkin/pull/27) · [PR #3](https://github.com/lankerr/2026-glados-checkin/pull/3) |
 
 在已安装 Nix 的环境，从仓库根目录可以复查 NixOS 的配置值。命令读取仓库锁定的 nixpkgs，首次求值需要联网。
