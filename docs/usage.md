@@ -2,6 +2,12 @@
 
 [返回项目首页](../README.md) · [当前运行边界](../README.md#status)
 
+### 连续签到日报提示「积分流水读取失败」
+
+打开失败的 **Daily Streak Report** 运行，在 **Summary** 看账号编号和失败类别。HTTP 401 时先在官网确认登录状态，HTTP 403 时查看官网是否提示访问限制。请求超时或 HTTP 5xx 时可稍后重跑只读日报。若提示配置格式无效，请检查仓库的 `GLADOS_COOKIE` Secret 和 `GLADOS_USER_AGENT` 设置。
+
+日报使用与主程序相同的 Cookie 解析，支持 Cookie 请求头、Cookie-Editor JSON，以及换行或 `&` 分隔的多个账号。某个账号读取失败时，其他账号的结果仍写入摘要，整次运行显示失败。反馈时提供失败类别、配置格式和运行版本即可；Cookie、完整请求头和响应正文请保存在本机。感谢 @goehou 提供原始报错。[Issue #55](https://github.com/lankerr/2026-glados-checkin/issues/55)
+
 本页保留配置参数、图解部署和排障细节。**先选运行模式，再配置凭据**：Actions 定时默认只读；完整签到可能调用默认 `plan500` 自动兑换，不需要时设 `EXCHANGE_PLAN=off`。不要同时启用多个调度器。
 
 > 当前通知的“今日加分”只基于接口返回的前 10 条记录，筛选当天正变动并排除 exchange/refund；不是完整当日流水，也不能与某次请求强行关联。
