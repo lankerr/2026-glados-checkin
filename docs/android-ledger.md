@@ -47,6 +47,15 @@
 | HTTP 401 或 403 | 官网拒绝了本次读取。请本人打开官网检查登录状态，按页面提示完成验证。 |
 | 本地通知命令未成功 | 每个账号的结果仍在终端。检查 Termux:API 应用、命令和安卓通知权限。 |
 
-这个入口按需运行，不注册定时任务。仓库已通过隔离环境测试；手机系统是否及时展示通知仍需在自己的设备上验证。
+## 可选：让安卓每天核对一次
+
+先手动运行成功，再用 `termux-job-scheduler --pending` 查看手机已有的任务。以下示例选用编号 `5402`，请确认该编号空闲；已占用就另选一个。注册命令在仓库目录运行，任务读取上面的默认私有配置文件。
+
+```sh
+termux-job-scheduler --job-id 5402 --script "$PWD/termux/run-ledger.sh" --period-ms 86400000 --persisted true --network any
+termux-job-scheduler --pending
+```
+
+安卓决定实际唤醒时间，约每 24 小时读取一次。需要停用时，按实际编号执行 `termux-job-scheduler --cancel --job-id 5402`，再用 `--pending` 核对。两个管理命令的参数已按 [Termux:API 命令源码](https://github.com/termux/termux-api-package/blob/master/scripts/termux-job-scheduler.in)核对。手机定时唤醒和通知送达仍待真机验证。
 
 感谢 @chengchang1987-cloud 提出手机端需求，感谢 @lankerr 将 Termux 配置和本地通知整理成提案。[Issue #40](https://github.com/lankerr/2026-glados-checkin/issues/40) · [PR #54](https://github.com/lankerr/2026-glados-checkin/pull/54)
