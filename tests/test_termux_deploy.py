@@ -103,6 +103,34 @@ class ScriptGuardTests(unittest.TestCase):
 
 class EngineImportTests(unittest.TestCase):
     @unittest.skipUnless(os.name == "posix" and shutil.which("bash"), "requires bash")
+    def test_custom_config_is_private_and_never_registers_default_job(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            for cmd in ("pkg", "pip", "termux-wake-lock", "termux-job-scheduler"):
+                stub = root / cmd
+                stub.write_text(f'#!/bin/sh\necho {cmd} >> "$HOME/calls"\n')
+                stub.chmod(0o700)
+            directory = root / "second profile"
+            env = {"PATH": tmp + os.pathsep + os.defpath, "HOME": tmp,
+                   "GLADOS_TERMUX_CONFIG": str(directory), "LANG": "C.UTF-8"}
+            bootstrap = ["bash", str(REPO_ROOT / "termux/bootstrap.sh")]
+            subprocess.run(bootstrap, env=env, check=True, capture_output=True)
+            config = directory / "env"
+            self.assertEqual(config.stat().st_mode & 0o777, 0o600)
+            config.write_text("return 7\n")
+            subprocess.run(bootstrap, env=env, check=True, capture_output=True)
+            self.assertEqual(config.read_text(), "return 7\n")
+            self.assertNotIn("termux-job-scheduler", (root / "calls").read_text())
+            default_dir = root / ".config/glados-termux"
+            default_dir.mkdir(parents=True)
+            default_dir.joinpath("env").write_text('touch "$HOME/wrong-account"\nreturn 7\n')
+            proc = subprocess.run(["bash", str(REPO_ROOT / "termux/run-checkin.sh")],
+                                  env=env, capture_output=True, encoding="utf-8", timeout=10)
+            self.assertEqual(proc.returncode, 2)
+            self.assertIn("加载配置失败", proc.stderr)
+            self.assertFalse((root / "wrong-account").exists())
+
+    @unittest.skipUnless(os.name == "posix" and shutil.which("bash"), "requires bash")
     def test_runner_preserves_exit_and_keeps_long_engine_log_out_of_notification(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

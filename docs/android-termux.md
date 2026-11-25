@@ -12,11 +12,16 @@
 
 ```sh
 pkg install -y git
-git clone https://github.com/lankerr/2026-glados-checkin.git
+git clone --single-branch --branch codex/android-termux-checkin https://github.com/lankerr/2026-glados-checkin.git
 cd 2026-glados-checkin
 ```
 
-也下载 ZIP 解压后用 `cd` 进入目录，效果相同。
+也可下载该草稿分支的 ZIP，解压后进入目录。只想验证手机通知时，安装 Termux:API 及命令行依赖后运行下面两行。看到「结果待核对」与手机通知就完成了这一步，无需填写账号或注册任务。
+
+```sh
+pkg install python termux-api
+printf '%s\n' '推送成功' | python termux/notify.py --code 0
+```
 
 ## 二、一键引导
 
@@ -62,7 +67,7 @@ termux-job-scheduler --cancel-job 101
 
 - **Turnstile 人机验证与 PC 版同一限制**：手机 IP 与机房 IP 不同、通过率可能更好，但验证由服务端决定，无法保证。遇到验证失败时，推送里的措辞与 PC 版一致，去官网手动完成当次签到即可，无需反复重试。
 - **自动兑换**沿用 `EXCHANGE_PLAN` 环境变量，与 PC 版行为一致。
-- **多账号**：JobScheduler 的任务编号不能证明账号隔离。安装脚本和运行入口使用不同的配置路径参数，多任务定时运行仍待验证，请勿按此草稿为不同账号注册多个任务。
+- **自定义配置**：安装和手动运行均优先读取 `GLADOS_TERMUX_ENV` 指定的文件，其次读取 `GLADOS_TERMUX_CONFIG` 目录下的 `env`。自定义文件缺失或加载失败会停止运行。Android 调度任务使用默认配置，所以安装器遇到自定义路径时只准备模板；已有系统任务仍应按其原配置单独核对。
 - 本方案不读取通讯录、位置或短信；Termux 权限仅涉及网络与通知。
 
 ## 与其他手机路径的关系

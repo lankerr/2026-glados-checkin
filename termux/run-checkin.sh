@@ -5,7 +5,7 @@ set -uo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
 ENGINE="$HERE/../checkin.py"
-ENV_FILE="${GLADOS_TERMUX_ENV:-$HOME/.config/glados-termux/env}"
+ENV_FILE="${GLADOS_TERMUX_ENV:-${GLADOS_TERMUX_CONFIG:-$HOME/.config/glados-termux}/env}"
 
 if [ ! -f "$ENV_FILE" ]; then
     echo "未找到配置 $ENV_FILE，请先运行 termux/bootstrap.sh" >&2
@@ -16,7 +16,10 @@ if [ ! -f "$ENGINE" ]; then
     exit 2
 fi
 # shellcheck disable=SC1090
-. "$ENV_FILE"
+if ! . "$ENV_FILE"; then
+    echo "加载配置失败，已停止。" >&2
+    exit 2
+fi
 
 # Termux 装不了 playwright：显式关闭浏览器兜底，只走 requests 通道
 export GLADOS_BROWSER_CHECKIN=0
