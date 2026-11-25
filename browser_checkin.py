@@ -160,10 +160,12 @@ def _try_domains(context, cookie_header, expected_email, marker, domains=None):
         result = response.json()
         if not isinstance(result, dict) or type(result.get('code')) is not int:
             return _failure('browser-outcome-unknown')
-        from checkin import is_non_retryable_checkin_result, is_normal_checkin_result, is_turnstile_checkin_result
+        from checkin import NORMAL_CHECKIN_MESSAGES, is_non_retryable_checkin_result, is_turnstile_checkin_result
         if is_non_retryable_checkin_result(result) or is_turnstile_checkin_result(result):
             return result  # Preserve the rejection details and keep the marker for reconciliation.
-        if result['code'] not in (0, 1) or not is_normal_checkin_result(result):
+        message = str(result.get('message', '')).strip().lower()
+        confirmed = message == 'checkin!' or message.startswith(NORMAL_CHECKIN_MESSAGES)
+        if result['code'] not in (0, 1) or result.get('request_failed') is True or not confirmed:
             return _failure('browser-outcome-unknown')
         marker.unlink()
         return result

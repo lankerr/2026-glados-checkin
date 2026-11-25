@@ -72,7 +72,8 @@ class SafetyTests(unittest.TestCase):
         self.assertFalse(self.marker.exists())
 
     def test_unconfirmed_server_response_preserves_marker(self):
-        for status, body in [(503, {'code': 0}), (200, {'code': 42}),
+        for status, body in [(503, {'code': 0, 'message': 'Checkin!'}), (200, {'code': 42}),
+                             (200, {'code': 0}), (200, {'code': 0, 'message': 'Unknown outcome'}),
                              (200, {'code': 1, 'message': 'Unknown outcome'})]:
             with self.subTest(status=status, body=body):
                 context = FakeContext(body)
@@ -87,6 +88,11 @@ class SafetyTests(unittest.TestCase):
         result = b._try_domains(FakeContext(rejected), COOKIE, EMAIL, self.marker)
         self.assertEqual(result, rejected)
         self.assertTrue(self.marker.is_file())
+
+    def test_known_duplicate_reconciles_marker(self):
+        duplicate = {'code': 1, 'message': 'Checkin repeats! Please try tomorrow'}
+        self.assertEqual(b._try_domains(FakeContext(duplicate), COOKIE, EMAIL, self.marker), duplicate)
+        self.assertFalse(self.marker.exists())
     def test_mismatched_identity_no_click(self):
         c=FakeContext({'code':0},'other@example.invalid')
         self.assertEqual(b._try_domains(c,COOKIE,EMAIL,self.marker)['reason'],'browser-identity-unverified')
