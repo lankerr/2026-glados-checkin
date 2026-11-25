@@ -1,5 +1,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const vm = require('node:vm');
 const { parse, day, nextReminder } = require('../core.js');
 const now = Date.parse('2026-11-18T16:00:00Z');
 const row = (business, change = 2, time = now) => ({ business, change, time });
@@ -28,6 +30,36 @@ test('unreadable server balances and application errors cannot look successful',
   assert.equal(parse({ code:1, points:50 },now), null);
   assert.equal(parse({ points:0 },now).historyAvailable, false);
   assert.equal(parse({ points:0, list:[] },now).historyAvailable, true);
+});
+test('explicit string zero matches numeric success; other falsy or malformed codes fail', () => {
+  for (const code of [0, '0']) assert.equal(parse({ points: 7, code }, now).points, 7);
+  for (const code of [false, null, '', '00', ' 0', '403']) assert.equal(parse({ points: 7, code }, now), null);
+});
+test('the injected reader verifies identity on both sides of a string-coded ledger read', async () => {
+  const source = fs.readFileSync(require.resolve('../reader.js'), 'utf8');
+  const origin = 'https://example.invalid';
+  const identity = code => ({ code, data: { email: 'test@example.invalid' } });
+  async function run(replies) {
+    const paths = [];
+    const context = {
+      URL, AbortSignal, location: { origin, pathname: '/console/checkin' },
+      fetch: async url => {
+        paths.push(new URL(url).pathname);
+        return { status: 200, ok: true, json: async () => replies.shift() };
+      },
+    };
+    const read = vm.runInNewContext(source + '\nreadOfficialLedger', context);
+    return { result: await read(origin), paths };
+  }
+  const points = { points: 7, code: '0', history: [row('checkin')] };
+  const { result, paths } = await run([identity('0'), points, identity(0)]);
+  assert.deepEqual(paths, ['/api/user/status', '/api/user/points', '/api/user/status']);
+  assert.equal(parse(result.ledger, now).confirmed, true);
+  assert.equal((await run([identity(false)])).result.error, 'identity');
+  assert.equal((await run([identity('403')])).result.error, 'login');
+  assert.equal((await run([identity(0), points, identity('1')])).result.error, 'login');
+  const changed = { code: '0', data: { email: 'other@example.invalid' } };
+  assert.equal((await run([identity('0'), points, changed])).result.error, 'switched');
 });
 test('one-shot reminders target the next Beijing 09:30, including after sleep', () => {
   const slot = Date.parse('2026-11-18T01:30:00Z');

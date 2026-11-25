@@ -14,7 +14,7 @@ const Ledger = (() => {
   }
   function parse(payload, now = Date.now()) {
     const points = number(payload?.points);
-    if (points === null || (payload.code !== undefined && payload.code !== 0)) return null;
+    if (points === null || ![undefined, 0, '0'].includes(payload.code)) return null;
     const history = Array.isArray(payload.history) ? payload.history : payload.list;
     const rows = [];
     for (const item of Array.isArray(history) ? history : []) {
