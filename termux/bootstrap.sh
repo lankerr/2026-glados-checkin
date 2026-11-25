@@ -65,6 +65,6 @@ termux-job-scheduler \
 echo "==> 完成。接下来："
 echo "    1. 编辑 $ENV_FILE 填入 GLADOS_COOKIE"
 echo "    2. 手动试跑一次：bash $HERE/run-checkin.sh"
-echo "    3. 查看已注册任务：termux-job-scheduler --list-job"
-echo "       取消任务：termux-job-scheduler --cancel-job $JOB_ID"
+echo "    3. 查看已注册任务：termux-job-scheduler --pending"
+echo "       取消任务：termux-job-scheduler --cancel --job-id $JOB_ID"
 echo "提醒：本机通知需要同时安装 Termux:API 应用（F-Droid 版），命令行包已装。"

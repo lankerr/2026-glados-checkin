@@ -57,9 +57,11 @@ termux-job-scheduler --job-id 101 --script "$PWD/termux/run-checkin.sh" --period
 常用管理命令：
 
 ```sh
-termux-job-scheduler --list-job     # 查看已注册任务
-termux-job-scheduler --cancel-job 101
+termux-job-scheduler --pending      # 查看已注册任务
+termux-job-scheduler --cancel --job-id 101
 ```
+
+如果设置过 `GLADOS_TERMUX_JOB_ID`，请把 101 换成自己的编号。取消后再运行 `--pending` 即可核对。[Termux 官方命令参数](https://github.com/termux/termux-api-package/blob/master/scripts/termux-job-scheduler.in)
 
 手机厂商的省电策略可能杀死后台 Termux。Termux 通知栏常驻的 "Acquire wakelock" 即引导脚本获取的唤醒锁；若仍被清理，在系统设置里给 Termux 与 Termux:API 关闭电池优化（各品牌路径不同，搜索"你的型号 + 电池优化白名单"）。
 
