@@ -859,10 +859,10 @@ def _try_remote_cdp(cdp_url, cookie_header, user_agent=None):
     _log("🌐 正在连接本机 CDP 服务…")
     try:
         browser_ws_url = resolve_cdp_url(cdp_url)
-    except ValueError as e:
-        _log(f"⚠️ 自定义 CDP 地址无效: {e}")
-        return {'request_failed': True, 'reason': 'browser-checkin-failed',
-                'detail': f'自定义 CDP 地址无效: {e}'}
+    except ValueError:
+        detail = '自定义 CDP 地址无效，请检查本机调试端点配置'
+        _log(f'⚠️ {detail}')
+        return {'request_failed': True, 'reason': 'browser-checkin-failed', 'detail': detail}
     except Exception as e:
         _log(f"⚠️ 连接自定义 CDP 服务失败 ({type(e).__name__})")
         return {'request_failed': True, 'reason': 'browser-checkin-failed',
