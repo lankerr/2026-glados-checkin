@@ -39,6 +39,7 @@ import tempfile
 import time
 from datetime import datetime, timezone, timedelta
 from urllib.parse import urlsplit
+import urllib.error
 import urllib.request
 
 # 浏览器通道优先级：真实 Chrome > 真实 Edge > Playwright 自带 Chromium
@@ -432,6 +433,28 @@ def _build_http_version_url(parsed):
     return f'{parsed.scheme.lower()}://{host}{port_part}{base_path}/json/version'
 
 
+class _NoRedirectHandler(urllib.request.HTTPRedirectHandler):
+    """禁用本机 CDP 发现请求的 HTTP 重定向，收到 3xx 时立即停止。"""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        if fp is not None:
+            try:
+                fp.close()
+            except Exception:
+                pass
+        raise urllib.error.URLError('cdp-redirect-rejected')
+
+
+def _fetch_local_cdp_json(url, timeout=5):
+    """以直连（禁用环境代理与 HTTP 重定向）方式请求本机 CDP JSON 端点。"""
+    opener = urllib.request.build_opener(
+        urllib.request.ProxyHandler({}),
+        _NoRedirectHandler(),
+    )
+    with opener.open(url, timeout=timeout) as r:
+        return json.loads(r.read().decode())
+
+
 def resolve_cdp_url(cdp_url):
     """从给定的本机 CDP 地址解析出浏览器级 WebSocket 地址（禁止复用已有页面）。"""
     parsed = _validate_cdp_url(cdp_url)
@@ -444,8 +467,7 @@ def resolve_cdp_url(cdp_url):
 
     version_url = _build_http_version_url(parsed)
     try:
-        with urllib.request.urlopen(version_url, timeout=5) as r:
-            info = json.loads(r.read().decode())
+        info = _fetch_local_cdp_json(version_url, timeout=5)
     except Exception as e:
         raise RuntimeError(f'连接本机 CDP 服务失败 ({type(e).__name__})') from None
 
@@ -815,8 +837,7 @@ def _try_domains_cdp(browser_path, cookie_header, headless, user_agent=None):
             if proc.poll() is not None:
                 break
             try:
-                with urllib.request.urlopen(f'http://127.0.0.1:{port}/json', timeout=1) as req:
-                    pages = json.loads(req.read().decode())
+                pages = _fetch_local_cdp_json(f'http://127.0.0.1:{port}/json', timeout=1)
                 ws_url = _pick_page_target_ws(pages)
                 if ws_url:
                     break

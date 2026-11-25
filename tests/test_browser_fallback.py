@@ -1,6 +1,8 @@
 """浏览器兜底通道（Turnstile）的回归测试：全部离线，不起真浏览器。"""
 
+import http.server
 import os
+import threading
 import unittest
 from unittest import mock
 
@@ -199,11 +201,11 @@ class CDPEndpointTests(unittest.TestCase):
         fake_response.__enter__.return_value = fake_response
         fake_response.__exit__.return_value = False
 
-        def fake_urlopen(url, timeout=5):
+        def fake_open(_opener, url, timeout=5):
             seen_urls.append(url)
             return fake_response
 
-        with mock.patch('urllib.request.urlopen', side_effect=fake_urlopen):
+        with mock.patch('urllib.request.OpenerDirector.open', autospec=True, side_effect=fake_open):
             ws_url = browser_checkin.resolve_cdp_url('http://localhost:9222')
             self.assertEqual(ws_url, 'ws://127.0.0.1:9222/devtools/browser/uuid-1')
         self.assertEqual(seen_urls, ['http://localhost:9222/json/version'])
@@ -215,23 +217,91 @@ class CDPEndpointTests(unittest.TestCase):
         fake_response.__enter__.return_value = fake_response
         fake_response.__exit__.return_value = False
 
-        def fake_urlopen(url, timeout=5):
+        def fake_open(_opener, url, timeout=5):
             seen_urls.append(url)
             return fake_response
 
-        with mock.patch('urllib.request.urlopen', side_effect=fake_urlopen):
+        with mock.patch('urllib.request.OpenerDirector.open', autospec=True, side_effect=fake_open):
             with self.assertRaises(RuntimeError):
                 browser_checkin.resolve_cdp_url('http://127.0.0.1:9222')
         self.assertEqual(seen_urls, ['http://127.0.0.1:9222/json/version'])
 
+    def test_http_discovery_rejects_redirect_without_second_request_and_bypasses_proxy(self):
+        seen_paths = []
+
+        class RedirectHandler(http.server.BaseHTTPRequestHandler):
+            def log_message(self, *args):
+                pass
+
+            def do_GET(self):
+                seen_paths.append(self.path)
+                if self.path == '/json/version':
+                    self.send_response(302)
+                    self.send_header('Location', f'http://127.0.0.1:{server.server_port}/second')
+                    self.end_headers()
+                    return
+                self.send_response(200)
+                self.end_headers()
+
+        server = http.server.ThreadingHTTPServer(('127.0.0.1', 0), RedirectHandler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            with mock.patch.dict(os.environ, {'HTTP_PROXY': 'http://127.0.0.1:1', 'http_proxy': 'http://127.0.0.1:1'}):
+                with self.assertRaises(RuntimeError):
+                    browser_checkin.resolve_cdp_url(f'http://127.0.0.1:{server.server_port}')
+            self.assertEqual(seen_paths, ['/json/version'])
+        finally:
+            server.shutdown()
+            server.server_close()
+
+    def test_http_discovery_bypasses_env_proxy_for_loopback_direct_connection(self):
+        seen_paths = []
+
+        class DirectHandler(http.server.BaseHTTPRequestHandler):
+            def log_message(self, *args):
+                pass
+
+            def do_GET(self):
+                seen_paths.append(self.path)
+                self.send_response(200)
+                self.send_header('Content-Type', 'application/json')
+                self.end_headers()
+                payload = f'{{"webSocketDebuggerUrl": "ws://127.0.0.1:{server.server_port}/devtools/browser/direct"}}'
+                self.wfile.write(payload.encode())
+
+        server = http.server.ThreadingHTTPServer(('127.0.0.1', 0), DirectHandler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            with mock.patch.dict(os.environ, {'HTTP_PROXY': 'http://127.0.0.1:1', 'http_proxy': 'http://127.0.0.1:1'}):
+                ws_url = browser_checkin.resolve_cdp_url(f'http://127.0.0.1:{server.server_port}')
+            self.assertEqual(ws_url, f'ws://127.0.0.1:{server.server_port}/devtools/browser/direct')
+            self.assertEqual(seen_paths, ['/json/version'])
+        finally:
+            server.shutdown()
+            server.server_close()
+
 
 class CDPIsolationAndRedactionTests(unittest.TestCase):
+    def test_value_error_from_parse_never_leaks_marker_in_logs_or_detail(self):
+        logs = []
+        with mock.patch('browser_checkin.urlsplit', side_effect=ValueError('invalid port in SYNTHETIC_PARSE_LEAK_MARKER')), \
+                mock.patch('browser_checkin._log', side_effect=logs.append):
+            result = browser_checkin._try_remote_cdp(
+                'http://127.0.0.1:9222/SYNTHETIC_PARSE_LEAK_MARKER', COOKIE, user_agent='Mozilla/5.0'
+            )
+        self.assertTrue(result.get('request_failed'))
+        self.assertEqual(result.get('detail'), '自定义 CDP 地址无效，请检查本机调试端点配置')
+        combined = '\n'.join(logs) + '\n' + str(result.get('detail', ''))
+        self.assertNotIn('SYNTHETIC_PARSE_LEAK_MARKER', combined)
+
     def test_logs_and_errors_never_leak_cdp_credentials_or_query_tokens(self):
         markers = ('synthuser', 'SYNTHETIC_CDP_SECRET_999', 'SYNTHETIC_QUERY_TOKEN_XYZ')
         urls_and_modes = (
             (
                 'http://synthuser:SYNTHETIC_CDP_SECRET_999@127.0.0.1:9222/cdp?token=SYNTHETIC_QUERY_TOKEN_XYZ',
-                mock.patch('urllib.request.urlopen', side_effect=OSError('http://synthuser:SYNTHETIC_CDP_SECRET_999@127.0.0.1:9222?token=SYNTHETIC_QUERY_TOKEN_XYZ unreachable')),
+                mock.patch('urllib.request.OpenerDirector.open', side_effect=OSError('http://synthuser:SYNTHETIC_CDP_SECRET_999@127.0.0.1:9222?token=SYNTHETIC_QUERY_TOKEN_XYZ unreachable')),
             ),
             (
                 'ws://synthuser:SYNTHETIC_CDP_SECRET_999@127.0.0.1:9222/devtools/browser?token=SYNTHETIC_QUERY_TOKEN_XYZ',
@@ -239,7 +309,7 @@ class CDPIsolationAndRedactionTests(unittest.TestCase):
             ),
             (
                 'http://synthuser:SYNTHETIC_CDP_SECRET_999@192.168.1.99:9222?token=SYNTHETIC_QUERY_TOKEN_XYZ',
-                mock.patch('urllib.request.urlopen'),
+                mock.patch('urllib.request.OpenerDirector.open'),
             ),
         )
         for bad_url, patcher in urls_and_modes:
