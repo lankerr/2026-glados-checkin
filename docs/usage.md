@@ -27,7 +27,7 @@
 | `GLADOS_BROWSER_ENGINE`   | ❌ 否 | 浏览器驱动引擎：`auto`（默认，优先原生 CDP，无可用系统浏览器时回退 Playwright）、`cdp`（强制仅原生 CDP）、`playwright`（强制仅 Playwright）。 |
 | `GLADOS_BROWSER_HEADLESS` | ❌ 否 | 浏览器兜底改无头模式：`1` 无头，`0` 有头；未检测到图形桌面（无 DISPLAY）时自动切换为无头。 |
 | `GLADOS_BROWSER_PATH`     | ❌ 否 | 自定义浏览器可执行文件路径（如未在默认 PATH 中，可指定本地 Edge/Chrome/Chromium 路径）。 |
-| `GLADOS_CDP_URL`          | ❌ 否 | 自定义 CDP 服务端点（如 `http://127.0.0.1:9222` 或 `ws://...`），支持复用已有浏览器实例或远程无头容器。 |
+| `GLADOS_CDP_URL`          | ❌ 否 | 本机回环 CDP 服务端点（如 `http://127.0.0.1:9222` 或 `ws://127.0.0.1:9222/devtools/browser`），每次通过隔离上下文执行且不复用已有页面。 |
 
 PushPlus、Server酱和 Telegram 均为可选，可单独使用，也可同时配置；多个渠道配置后会分别发送同一份多账号汇总，并遵循同一个 `PUSH_LEVEL` 设置。只读诊断（`diagnose_only`）不发送推送。
 
@@ -476,7 +476,8 @@ python3 checkin.py
             # 【可选】浏览器配置（用于 Cloudflare Turnstile 验证）
             # browserEngine = "auto";             # "auto"（默认） / "cdp" / "playwright"
             # browserPackage = pkgs.microsoft-edge; # 提供系统中已有的 Edge/Chrome/Chromium
-            # cdpUrl = "http://127.0.0.1:9222";     # 或连接已有调试端口/远程无头容器
+            # browserHeadless = true;             # true / false / null（默认自动按 DISPLAY 检测）
+            # cdpUrl = "http://127.0.0.1:9222";     # 或连接本机已有浏览器/无头 CDP 调试端口
 
             # 【可选】消息推送配置
             pushLevel = "all"; # 或 "fail_only"

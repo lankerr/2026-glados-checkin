@@ -172,20 +172,188 @@ class BrowserDetectionTests(unittest.TestCase):
 
 
 class CDPEndpointTests(unittest.TestCase):
-    def test_ws_url_returned_directly(self):
-        ws_url, cleanup = browser_checkin.resolve_cdp_url('ws://127.0.0.1:9222/devtools/page/abc')
-        self.assertEqual(ws_url, 'ws://127.0.0.1:9222/devtools/page/abc')
-        self.assertIsNone(cleanup)
+    def test_browser_ws_url_returned_directly(self):
+        ws_url = browser_checkin.resolve_cdp_url('ws://127.0.0.1:9222/devtools/browser')
+        self.assertEqual(ws_url, 'ws://127.0.0.1:9222/devtools/browser')
 
-    def test_http_url_discovers_page(self):
+    def test_page_ws_url_rejected_without_reusing_existing_page(self):
+        with self.assertRaises(ValueError):
+            browser_checkin.resolve_cdp_url('ws://127.0.0.1:9222/devtools/page/abc')
+
+    def test_remote_non_loopback_cdp_urls_are_rejected(self):
+        for bad_url in (
+            'http://192.168.1.50:9222',
+            'https://remote-cdp.example.com:9222',
+            'ws://10.0.0.8:9222/devtools/browser',
+        ):
+            with self.assertRaises(ValueError) as ctx:
+                browser_checkin.resolve_cdp_url(bad_url)
+            self.assertNotIn('192.168', str(ctx.exception))
+            self.assertNotIn('remote-cdp.example.com', str(ctx.exception))
+            self.assertNotIn('10.0.0.8', str(ctx.exception))
+
+    def test_http_url_discovers_browser_ws_via_json_version_only(self):
+        seen_urls = []
         fake_response = mock.MagicMock()
-        fake_response.read.return_value = b'[{"type": "page", "webSocketDebuggerUrl": "ws://127.0.0.1:9222/page1"}]'
+        fake_response.read.return_value = b'{"webSocketDebuggerUrl": "ws://127.0.0.1:9222/devtools/browser/uuid-1"}'
         fake_response.__enter__.return_value = fake_response
         fake_response.__exit__.return_value = False
 
-        with mock.patch('urllib.request.urlopen', return_value=fake_response):
-            ws_url, cleanup = browser_checkin.resolve_cdp_url('http://127.0.0.1:9222')
-            self.assertEqual(ws_url, 'ws://127.0.0.1:9222/page1')
+        def fake_urlopen(url, timeout=5):
+            seen_urls.append(url)
+            return fake_response
+
+        with mock.patch('urllib.request.urlopen', side_effect=fake_urlopen):
+            ws_url = browser_checkin.resolve_cdp_url('http://localhost:9222')
+            self.assertEqual(ws_url, 'ws://127.0.0.1:9222/devtools/browser/uuid-1')
+        self.assertEqual(seen_urls, ['http://localhost:9222/json/version'])
+
+    def test_http_url_does_not_fallback_to_existing_pages(self):
+        seen_urls = []
+        fake_response = mock.MagicMock()
+        fake_response.read.return_value = b'{"Browser": "Chrome/145.0.0.0"}'
+        fake_response.__enter__.return_value = fake_response
+        fake_response.__exit__.return_value = False
+
+        def fake_urlopen(url, timeout=5):
+            seen_urls.append(url)
+            return fake_response
+
+        with mock.patch('urllib.request.urlopen', side_effect=fake_urlopen):
+            with self.assertRaises(RuntimeError):
+                browser_checkin.resolve_cdp_url('http://127.0.0.1:9222')
+        self.assertEqual(seen_urls, ['http://127.0.0.1:9222/json/version'])
+
+
+class CDPIsolationAndRedactionTests(unittest.TestCase):
+    def test_logs_and_errors_never_leak_cdp_credentials_or_query_tokens(self):
+        markers = ('synthuser', 'SYNTHETIC_CDP_SECRET_999', 'SYNTHETIC_QUERY_TOKEN_XYZ')
+        urls_and_modes = (
+            (
+                'http://synthuser:SYNTHETIC_CDP_SECRET_999@127.0.0.1:9222/cdp?token=SYNTHETIC_QUERY_TOKEN_XYZ',
+                mock.patch('urllib.request.urlopen', side_effect=OSError('http://synthuser:SYNTHETIC_CDP_SECRET_999@127.0.0.1:9222?token=SYNTHETIC_QUERY_TOKEN_XYZ unreachable')),
+            ),
+            (
+                'ws://synthuser:SYNTHETIC_CDP_SECRET_999@127.0.0.1:9222/devtools/browser?token=SYNTHETIC_QUERY_TOKEN_XYZ',
+                mock.patch('browser_checkin.CDPClient', side_effect=RuntimeError('ws://synthuser:SYNTHETIC_CDP_SECRET_999@127.0.0.1:9222/devtools/browser?token=SYNTHETIC_QUERY_TOKEN_XYZ failed')),
+            ),
+            (
+                'http://synthuser:SYNTHETIC_CDP_SECRET_999@192.168.1.99:9222?token=SYNTHETIC_QUERY_TOKEN_XYZ',
+                mock.patch('urllib.request.urlopen'),
+            ),
+        )
+        for bad_url, patcher in urls_and_modes:
+            logs = []
+            with patcher, mock.patch('browser_checkin._log', side_effect=logs.append):
+                result = browser_checkin._try_remote_cdp(bad_url, COOKIE, user_agent='Mozilla/5.0')
+            self.assertTrue(result.get('request_failed'))
+            combined = '\n'.join(logs) + '\n' + str(result.get('detail', ''))
+            for marker in markers:
+                self.assertNotIn(marker, combined)
+
+    def test_remote_cdp_uses_isolated_browser_context_and_disposes_on_failure(self):
+        calls = []
+
+        class FakeCDPClient:
+            def __init__(self, ws_url, session_id=None):
+                self.ws_url = ws_url
+                self.session_id = session_id
+
+            def call(self, method, params=None, timeout=15, use_session=True):
+                calls.append((method, params, self.session_id if use_session else None))
+                if method == 'Target.createBrowserContext':
+                    return {'id': 1, 'result': {'browserContextId': 'ctx-synthetic-1'}}
+                if method == 'Target.createTarget':
+                    return {'id': 2, 'result': {'targetId': 'target-synthetic-1'}}
+                if method == 'Target.attachToTarget':
+                    return {'id': 3, 'result': {'sessionId': 'session-synthetic-1'}}
+                return {'id': 4, 'result': {}}
+
+            def close(self):
+                calls.append(('close', None, None))
+
+        with mock.patch('browser_checkin.CDPClient', FakeCDPClient), \
+                mock.patch('browser_checkin._run_cdp_session_with_client', side_effect=RuntimeError('boom')), \
+                mock.patch('browser_checkin._log'):
+            result = browser_checkin._try_remote_cdp(
+                'ws://127.0.0.1:9222/devtools/browser', COOKIE, user_agent='Mozilla/5.0'
+            )
+
+        self.assertTrue(result.get('request_failed'))
+        methods = [c[0] for c in calls]
+        self.assertEqual(methods, [
+            'Target.createBrowserContext',
+            'Target.createTarget',
+            'Target.attachToTarget',
+            'Target.closeTarget',
+            'Target.disposeBrowserContext',
+            'close',
+        ])
+        self.assertEqual(calls[1][1].get('browserContextId'), 'ctx-synthetic-1')
+        self.assertEqual(calls[4][1].get('browserContextId'), 'ctx-synthetic-1')
+
+    def test_cross_account_cdp_sessions_isolate_and_clean_up_cookies(self):
+        class AccountFakeCDP:
+            def __init__(self):
+                self.session_id = 'session-1'
+                self.checkin_request_id = None
+                self.checkin_loading_finished = False
+                self.cookie_jar = {}
+                self.deleted = []
+
+            def call(self, method, params=None, timeout=15, use_session=True):
+                if method == 'Network.deleteCookies':
+                    self.deleted.append((params['name'], params['url']))
+                    self.cookie_jar.pop((params['name'], params['url']), None)
+                elif method == 'Network.setCookies':
+                    for c in params['cookies']:
+                        self.cookie_jar[(c['name'], c['url'])] = c['value']
+                return {'result': {}}
+
+            def evaluate(self, expr, timeout=5):
+                if 'window._glados_checkin_result' in expr:
+                    return {'status': 'captured', 'json': dict(OK)}
+                return None
+
+        acc1_cookie = 'gld:sess=synthetic-acc1; gld:sess.sig=synthetic-sig1'
+        acc2_cookie = 'gld:sess=synthetic-acc2; gld:sess.sig=synthetic-sig2'
+        fake_cdp = AccountFakeCDP()
+
+        with mock.patch.object(browser_checkin, 'DOMAINS', ('https://glados.cloud',)), \
+                mock.patch('browser_checkin._log'):
+            r1 = browser_checkin._run_cdp_session_with_client(fake_cdp, acc1_cookie)
+            self.assertEqual(r1, OK)
+            # 账号 1 结束后，会话 Cookie 必须已清空
+            self.assertEqual(fake_cdp.cookie_jar, {})
+
+            r2 = browser_checkin._run_cdp_session_with_client(fake_cdp, acc2_cookie)
+            self.assertEqual(r2, OK)
+            self.assertEqual(fake_cdp.cookie_jar, {})
+
+        self.assertIn(('gld:sess', 'https://glados.cloud/'), fake_cdp.deleted)
+        self.assertIn(('gld:sess.sig', 'https://glados.cloud/'), fake_cdp.deleted)
+
+    def test_headless_env_overrides_auto_detection(self):
+        with mock.patch.dict(os.environ, {'GLADOS_BROWSER_HEADLESS': '0', 'DISPLAY': '', 'WAYLAND_DISPLAY': '', 'GLADOS_BROWSER_ENGINE': 'cdp'}), \
+                mock.patch('browser_checkin._run_cdp', return_value={'ok': True}) as mock_cdp:
+            browser_checkin.browser_checkin(COOKIE, 'synthetic-ua')
+            self.assertFalse(mock_cdp.call_args.args[2])
+
+        with mock.patch.dict(os.environ, {'GLADOS_BROWSER_HEADLESS': '1', 'DISPLAY': ':0', 'GLADOS_BROWSER_ENGINE': 'cdp'}), \
+                mock.patch('browser_checkin._run_cdp', return_value={'ok': True}) as mock_cdp:
+            browser_checkin.browser_checkin(COOKIE, 'synthetic-ua')
+            self.assertTrue(mock_cdp.call_args.args[2])
+
+    def test_pick_page_target_ws_skips_extension_background_pages(self):
+        targets = [
+            {'type': 'background_page', 'url': 'chrome-extension://abc/_generated_background_page.html', 'webSocketDebuggerUrl': 'ws://127.0.0.1:9222/devtools/page/ext'},
+            {'type': 'service_worker', 'url': 'chrome-extension://def/sw.js', 'webSocketDebuggerUrl': 'ws://127.0.0.1:9222/devtools/page/sw'},
+            {'type': 'page', 'url': 'about:blank', 'webSocketDebuggerUrl': 'ws://127.0.0.1:9222/devtools/page/real'},
+        ]
+        self.assertEqual(
+            browser_checkin._pick_page_target_ws(targets),
+            'ws://127.0.0.1:9222/devtools/page/real',
+        )
 
 
 class EngineSelectionTests(unittest.TestCase):

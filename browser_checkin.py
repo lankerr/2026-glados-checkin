@@ -26,6 +26,7 @@
 
 import base64
 import glob
+import ipaddress
 import json
 import os
 import re
@@ -310,14 +311,17 @@ class SimpleWebSocket:
 class CDPClient:
     """通过 Chrome DevTools Protocol 控制浏览器的同步封装。"""
 
-    def __init__(self, ws_url):
+    def __init__(self, ws_url, session_id=None):
         self.ws = SimpleWebSocket(ws_url)
         self._msg_id = 0
+        self.session_id = session_id
         self.checkin_request_id = None
         self.checkin_loading_finished = False
 
     def _handle_event(self, data):
         if not isinstance(data, dict):
+            return
+        if self.session_id and data.get('sessionId') not in (None, self.session_id):
             return
         method = data.get('method', '')
         params = data.get('params', {})
@@ -352,12 +356,14 @@ class CDPClient:
             except ValueError:
                 pass
 
-    def call(self, method, params=None, timeout=15):
+    def call(self, method, params=None, timeout=15, use_session=True):
         self._msg_id += 1
         call_id = self._msg_id
         payload = {'id': call_id, 'method': method}
         if params is not None:
             payload['params'] = params
+        if self.session_id and use_session:
+            payload['sessionId'] = self.session_id
         self.ws.send(json.dumps(payload))
 
         deadline = time.monotonic() + timeout
@@ -389,49 +395,86 @@ class CDPClient:
         self.ws.close()
 
 
+def _is_loopback_host(host):
+    """仅允许本机回环主机名或回环 IP，防止会话凭据发往外部远端。"""
+    if not host:
+        return False
+    normalized = host.strip().strip('[]').lower()
+    if normalized == 'localhost':
+        return True
+    try:
+        return ipaddress.ip_address(normalized).is_loopback
+    except ValueError:
+        return False
+
+
+def _validate_cdp_url(cdp_url):
+    """校验自定义 CDP 地址格式与本机边界，报错绝不回显原始 URL 或凭据。"""
+    raw = (cdp_url or '').strip()
+    if not raw:
+        raise ValueError('自定义 CDP 地址为空')
+    parsed = urlsplit(raw)
+    scheme = parsed.scheme.lower()
+    if scheme not in ('http', 'https', 'ws', 'wss'):
+        raise ValueError('自定义 CDP 地址协议无效')
+    if not _is_loopback_host(parsed.hostname):
+        raise ValueError('自定义 CDP 地址仅支持本机回环地址')
+    return parsed
+
+
+def _build_http_version_url(parsed):
+    """构造不含用户认证信息与查询参数的 /json/version 发现地址。"""
+    host = parsed.hostname or ''
+    if ':' in host and not host.startswith('['):
+        host = f'[{host}]'
+    port_part = f':{parsed.port}' if parsed.port else ''
+    base_path = parsed.path.rstrip('/')
+    return f'{parsed.scheme.lower()}://{host}{port_part}{base_path}/json/version'
+
+
 def resolve_cdp_url(cdp_url):
-    """从给定的 CDP URL（HTTP/HTTPS 端点或 WebSocket 地址）解析出 ws_url 与可选的清理回调。"""
-    cdp_url = cdp_url.strip()
-    if cdp_url.startswith(('ws://', 'wss://')):
-        return cdp_url, None
+    """从给定的本机 CDP 地址解析出浏览器级 WebSocket 地址（禁止复用已有页面）。"""
+    parsed = _validate_cdp_url(cdp_url)
+    scheme = parsed.scheme.lower()
 
-    base_url = cdp_url.rstrip('/')
-    # 优先尝试在已有浏览器中开一个新标签页 (/json/new?about:blank)
+    if scheme in ('ws', 'wss'):
+        if '/devtools/page/' in parsed.path:
+            raise ValueError('不允许直接复用已有页面调试地址，请提供浏览器级 CDP 地址')
+        return cdp_url.strip()
+
+    version_url = _build_http_version_url(parsed)
     try:
-        req = urllib.request.Request(f'{base_url}/json/new?about:blank', method='PUT')
-        with urllib.request.urlopen(req, timeout=5) as r:
+        with urllib.request.urlopen(version_url, timeout=5) as r:
             info = json.loads(r.read().decode())
-            ws = info.get('webSocketDebuggerUrl')
-            target_id = info.get('id')
-            if ws:
-                def cleanup():
-                    try:
-                        urllib.request.urlopen(f'{base_url}/json/close/{target_id}', timeout=3)
-                    except Exception:
-                        pass
-                return ws, cleanup
-    except Exception:
-        pass
-
-    # 若 /json/new 不可用，寻找当前可用的 Page 目标
-    try:
-        with urllib.request.urlopen(f'{base_url}/json', timeout=5) as r:
-            pages = json.loads(r.read().decode())
-            for p in pages:
-                if p.get('type') == 'page' and p.get('webSocketDebuggerUrl'):
-                    return p['webSocketDebuggerUrl'], None
-            if pages and 'webSocketDebuggerUrl' in pages[0]:
-                return pages[0]['webSocketDebuggerUrl'], None
     except Exception as e:
-        raise RuntimeError(f"连接 CDP 服务 {cdp_url} 失败: {e}")
+        raise RuntimeError(f'连接本机 CDP 服务失败 ({type(e).__name__})') from None
 
-    raise RuntimeError(f"CDP 服务 {cdp_url} 未提供可用的页面目标")
+    ws_url = info.get('webSocketDebuggerUrl') if isinstance(info, dict) else None
+    if not ws_url or not isinstance(ws_url, str):
+        raise RuntimeError('CDP 服务未提供浏览器级调试端点')
+
+    ws_parsed = _validate_cdp_url(ws_url)
+    if ws_parsed.scheme.lower() not in ('ws', 'wss') or '/devtools/page/' in ws_parsed.path:
+        raise RuntimeError('CDP 服务返回的调试端点无效')
+    return ws_url.strip()
 
 
-def _run_cdp_session(ws_url, cookie_header, user_agent=None):
-    """通过已建立的 CDP WebSocket 会话执行签到。"""
-    cdp = CDPClient(ws_url)
+def _clear_cdp_session_cookies(cdp, cookie_names, bases):
+    """清理本轮涉及域名的会话 Cookie，避免多账号或失败重试残留会话状态。"""
+    for base in bases:
+        url = base.rstrip('/') + '/'
+        for name in cookie_names:
+            try:
+                cdp.call('Network.deleteCookies', {'name': name, 'url': url}, timeout=3)
+            except Exception:
+                pass
+
+
+def _run_cdp_session_with_client(cdp, cookie_header, user_agent=None):
+    """通过已建立的 CDP 会话（支持独立的 Target session_id）执行签到。"""
     last_error = None
+    attempted_bases = []
+    injected_names = set(SESSION_COOKIE_NAMES)
     try:
         # 开启网络与页面事件
         cdp.call('Page.enable')
@@ -525,8 +568,11 @@ def _run_cdp_session(ws_url, cookie_header, user_agent=None):
             last_turnstile_click = 0
             _log(f"📄 正在通过 {base} 打开官方签到页…")
 
-            # 注入该域名的安全会话 Cookie
+            # 注入该域名的安全会话 Cookie（先清理该域名残留的旧会话 Cookie）
+            attempted_bases.append(base)
             cookies = parse_cookie_header(cookie_header, base)
+            injected_names.update(c['name'] for c in cookies)
+            _clear_cdp_session_cookies(cdp, injected_names, (base,))
             cdp.call('Network.setCookies', {'cookies': cookies})
 
             # 导航到签到页面
@@ -687,7 +733,34 @@ def _run_cdp_session(ws_url, cookie_header, user_agent=None):
         return {'request_failed': True, 'reason': 'browser-checkin-failed',
                 'detail': str(last_error or '所有域名均未完成签到')}
     finally:
+        _clear_cdp_session_cookies(cdp, injected_names, attempted_bases)
+
+
+def _run_cdp_session(ws_url, cookie_header, user_agent=None):
+    """通过已建立的 CDP WebSocket 会话执行签到。"""
+    cdp = CDPClient(ws_url)
+    try:
+        return _run_cdp_session_with_client(cdp, cookie_header, user_agent=user_agent)
+    finally:
         cdp.close()
+
+
+def _pick_page_target_ws(targets):
+    """从自启浏览器 /json 列表中选择 type=page 的空白页调试地址，跳过扩展后台页。"""
+    if not isinstance(targets, list):
+        return None
+    for target in targets:
+        if (isinstance(target, dict)
+                and target.get('type') == 'page'
+                and target.get('webSocketDebuggerUrl')
+                and not str(target.get('url', '')).startswith('chrome-extension://')):
+            return target['webSocketDebuggerUrl']
+    for target in targets:
+        if (isinstance(target, dict)
+                and target.get('type') == 'page'
+                and target.get('webSocketDebuggerUrl')):
+            return target['webSocketDebuggerUrl']
+    return None
 
 
 def _try_domains_cdp(browser_path, cookie_header, headless, user_agent=None):
@@ -742,10 +815,10 @@ def _try_domains_cdp(browser_path, cookie_header, headless, user_agent=None):
             if proc.poll() is not None:
                 break
             try:
-                req = urllib.request.urlopen(f'http://127.0.0.1:{port}/json', timeout=1)
-                pages = json.loads(req.read().decode())
-                if pages and 'webSocketDebuggerUrl' in pages[0]:
-                    ws_url = pages[0]['webSocketDebuggerUrl']
+                with urllib.request.urlopen(f'http://127.0.0.1:{port}/json', timeout=1) as req:
+                    pages = json.loads(req.read().decode())
+                ws_url = _pick_page_target_ws(pages)
+                if ws_url:
                     break
             except Exception:
                 pass
@@ -767,9 +840,9 @@ def _try_domains_cdp(browser_path, cookie_header, headless, user_agent=None):
 
         return _run_cdp_session(ws_url, cookie_header, user_agent=user_agent)
     except Exception as e:
-        _log(f"⚠️ 浏览器签到异常: {e}")
+        _log(f"⚠️ 浏览器签到异常 ({type(e).__name__})")
         return {'request_failed': True, 'reason': 'browser-checkin-failed',
-                'detail': str(e)}
+                'detail': f'浏览器签到异常 ({type(e).__name__})'}
     finally:
         try:
             proc.terminate()
@@ -782,24 +855,78 @@ def _try_domains_cdp(browser_path, cookie_header, headless, user_agent=None):
 
 
 def _try_remote_cdp(cdp_url, cookie_header, user_agent=None):
-    """连接到用户自定义配置的 CDP 服务端点（如 http://127.0.0.1:9222 或 ws://...）执行签到。"""
-    _log(f"🌐 正在连接自定义 CDP 服务: {cdp_url}")
+    """连接到本机配置的 CDP 服务端点（如 http://127.0.0.1:9222），在隔离上下文中执行签到。"""
+    _log("🌐 正在连接本机 CDP 服务…")
     try:
-        ws_url, cleanup = resolve_cdp_url(cdp_url)
-    except Exception as e:
-        _log(f"⚠️ 解析自定义 CDP 地址失败: {e}")
+        browser_ws_url = resolve_cdp_url(cdp_url)
+    except ValueError as e:
+        _log(f"⚠️ 自定义 CDP 地址无效: {e}")
         return {'request_failed': True, 'reason': 'browser-checkin-failed',
-                'detail': f'解析自定义 CDP 地址失败: {e}'}
+                'detail': f'自定义 CDP 地址无效: {e}'}
+    except Exception as e:
+        _log(f"⚠️ 连接自定义 CDP 服务失败 ({type(e).__name__})")
+        return {'request_failed': True, 'reason': 'browser-checkin-failed',
+                'detail': f'连接自定义 CDP 服务失败 ({type(e).__name__})'}
 
+    cdp = None
+    browser_context_id = None
+    target_id = None
     try:
-        return _run_cdp_session(ws_url, cookie_header, user_agent=user_agent)
+        cdp = CDPClient(browser_ws_url)
+        ctx_res = cdp.call(
+            'Target.createBrowserContext',
+            {'disposeOnDetach': True},
+            timeout=10,
+            use_session=False,
+        )
+        browser_context_id = (ctx_res or {}).get('result', {}).get('browserContextId')
+        if not browser_context_id:
+            raise RuntimeError('createBrowserContext-failed')
+
+        target_res = cdp.call(
+            'Target.createTarget',
+            {'url': 'about:blank', 'browserContextId': browser_context_id},
+            timeout=10,
+            use_session=False,
+        )
+        target_id = (target_res or {}).get('result', {}).get('targetId')
+        if not target_id:
+            raise RuntimeError('createTarget-failed')
+
+        attach_res = cdp.call(
+            'Target.attachToTarget',
+            {'targetId': target_id, 'flatten': True},
+            timeout=10,
+            use_session=False,
+        )
+        session_id = (attach_res or {}).get('result', {}).get('sessionId')
+        if not session_id:
+            raise RuntimeError('attachToTarget-failed')
+
+        cdp.session_id = session_id
+        return _run_cdp_session_with_client(cdp, cookie_header, user_agent=user_agent)
     except Exception as e:
-        _log(f"⚠️ 自定义 CDP 服务签到异常: {e}")
+        _log(f"⚠️ 自定义 CDP 服务签到异常 ({type(e).__name__})")
         return {'request_failed': True, 'reason': 'browser-checkin-failed',
-                'detail': str(e)}
+                'detail': f'自定义 CDP 服务签到异常 ({type(e).__name__})'}
     finally:
-        if cleanup:
-            cleanup()
+        if cdp is not None:
+            if target_id:
+                try:
+                    cdp.call('Target.closeTarget', {'targetId': target_id}, timeout=3, use_session=False)
+                except Exception:
+                    pass
+            if browser_context_id:
+                try:
+                    cdp.call(
+                        'Target.disposeBrowserContext',
+                        {'browserContextId': browser_context_id},
+                        timeout=3,
+                        use_session=False,
+                    )
+                except Exception:
+                    pass
+            cdp.close()
 
 
 def _pick_context(pw, headless, user_agent=None):
@@ -827,113 +954,141 @@ def _pick_context(pw, headless, user_agent=None):
     raise RuntimeError('无可用浏览器通道（' + '; '.join(errors) + '）')
 
 
+def _clear_playwright_session_cookies(context, cookie_names):
+    """清理 Playwright 上下文中的会话 Cookie，防止多账号互相污染。"""
+    for name in cookie_names:
+        try:
+            context.clear_cookies(name=name)
+        except TypeError:
+            try:
+                context.clear_cookies()
+            except Exception:
+                pass
+            break
+        except Exception:
+            pass
+
+
 def _try_domains_playwright(context, cookie_header):
     """Playwright 兼容回退：逐域名打开签到页并点击。"""
     last_error = None
     checkin_name = re.compile(r'check\s*in', re.IGNORECASE)
+    injected_names = set(SESSION_COOKIE_NAMES)
 
-    for base in DOMAINS:
-        captured = {'json': None}
-        page = None
+    try:
+        for base in DOMAINS:
+            captured = {'json': None}
+            page = None
 
-        def on_response(resp, _base=base):
-            try:
-                path = urlsplit(resp.url).path.rstrip('/')
-                if (resp.url.startswith(_base) and path == '/api/user/checkin'
-                        and resp.request.method == 'POST'):
-                    body = resp.text()
-                    try:
-                        parsed = json.loads(body)
-                        if not ('nonce' in parsed and 'ttl' in parsed and 'message' not in parsed):
-                            captured['json'] = parsed
-                    except ValueError:
-                        captured['json'] = {'request_failed': True,
-                                            'reason': 'browser-checkin-invalid-json'}
-            except Exception:
-                pass
-
-        try:
-            context.add_cookies(parse_cookie_header(cookie_header, base))
-            page = context.new_page()
-            page.on('response', on_response)
-            page.goto(base + CHECKIN_PAGE_PATH, wait_until='domcontentloaded', timeout=45000)
-            _log("📄 已打开官方签到页，等待 Check in 按钮就绪…")
-
-            btn = None
-            deadline = time.monotonic() + BUTTON_WAIT_SECONDS
-            while time.monotonic() < deadline and not captured['json']:
+            def on_response(resp, _base=base):
                 try:
-                    btn = page.get_by_role('button', name=checkin_name).first
-                    if btn.count() == 0:
-                        btn = None
-                    elif btn.is_disabled():
-                        btn = None
-                    else:
-                        break
-                except Exception:
-                    btn = None
-                page.wait_for_timeout(500)
-
-            if captured['json']:
-                return captured['json']
-            if btn is None:
-                last_error = f'{base}: 未找到可点击的 Check in 按钮'
-                _log(f"⚠️ {last_error}，尝试下一个域名")
-                continue
-
-            _log("🖱️ 点击 Check in，页面将自行完成 Turnstile 验证…")
-            with page.expect_response(lambda r: r.url.startswith(base)
-                                      and urlsplit(r.url).path.rstrip('/') == '/api/user/checkin'
-                                      and r.request.method == 'POST',
-                                      timeout=RESULT_WAIT_SECONDS * 1000) as resp_info:
-                btn.click()
-            resp = resp_info.value
-            try:
-                captured['json'] = resp.json()
-            except ValueError:
-                captured['json'] = {'request_failed': True,
-                                    'reason': 'browser-checkin-invalid-json'}
-            result = captured['json']
-            if isinstance(result, dict) and result.get('reason') == 'turnstile':
-                _log("⚠️ 服务端仍要求 Turnstile")
-            return result
-        except Exception as e:
-            last_error = f'{base}: {type(e).__name__}'
-            _log(f"⚠️ 浏览器签到异常 {last_error}，尝试下一个域名")
-        finally:
-            if page:
-                try:
-                    page.close()
+                    path = urlsplit(resp.url).path.rstrip('/')
+                    if (resp.url.startswith(_base) and path == '/api/user/checkin'
+                            and resp.request.method == 'POST'):
+                        body = resp.text()
+                        try:
+                            parsed = json.loads(body)
+                            if not ('nonce' in parsed and 'ttl' in parsed and 'message' not in parsed):
+                                captured['json'] = parsed
+                        except ValueError:
+                            captured['json'] = {'request_failed': True,
+                                                'reason': 'browser-checkin-invalid-json'}
                 except Exception:
                     pass
 
-    return {'request_failed': True, 'reason': 'browser-checkin-failed',
-            'detail': str(last_error or '所有域名均未完成签到')}
+            try:
+                cookies = parse_cookie_header(cookie_header, base)
+                injected_names.update(c['name'] for c in cookies)
+                _clear_playwright_session_cookies(context, injected_names)
+                context.add_cookies(cookies)
+                page = context.new_page()
+                page.on('response', on_response)
+                page.goto(base + CHECKIN_PAGE_PATH, wait_until='domcontentloaded', timeout=45000)
+                _log("📄 已打开官方签到页，等待 Check in 按钮就绪…")
+
+                btn = None
+                deadline = time.monotonic() + BUTTON_WAIT_SECONDS
+                while time.monotonic() < deadline and not captured['json']:
+                    try:
+                        btn = page.get_by_role('button', name=checkin_name).first
+                        if btn.count() == 0:
+                            btn = None
+                        elif btn.is_disabled():
+                            btn = None
+                        else:
+                            break
+                    except Exception:
+                        btn = None
+                    page.wait_for_timeout(500)
+
+                if captured['json']:
+                    return captured['json']
+                if btn is None:
+                    last_error = f'{base}: 未找到可点击的 Check in 按钮'
+                    _log(f"⚠️ {last_error}，尝试下一个域名")
+                    continue
+
+                _log("🖱️ 点击 Check in，页面将自行完成 Turnstile 验证…")
+                with page.expect_response(lambda r: r.url.startswith(base)
+                                          and urlsplit(r.url).path.rstrip('/') == '/api/user/checkin'
+                                          and r.request.method == 'POST',
+                                          timeout=RESULT_WAIT_SECONDS * 1000) as resp_info:
+                    btn.click()
+                resp = resp_info.value
+                try:
+                    captured['json'] = resp.json()
+                except ValueError:
+                    captured['json'] = {'request_failed': True,
+                                        'reason': 'browser-checkin-invalid-json'}
+                result = captured['json']
+                if isinstance(result, dict) and result.get('reason') == 'turnstile':
+                    _log("⚠️ 服务端仍要求 Turnstile")
+                return result
+            except Exception as e:
+                last_error = f'{base}: {type(e).__name__}'
+                _log(f"⚠️ 浏览器签到异常 {last_error}，尝试下一个域名")
+            finally:
+                if page:
+                    try:
+                        page.close()
+                    except Exception:
+                        pass
+
+        return {'request_failed': True, 'reason': 'browser-checkin-failed',
+                'detail': str(last_error or '所有域名均未完成签到')}
+    finally:
+        _clear_playwright_session_cookies(context, injected_names)
+
+
+def _with_native_ua_retry(runner, user_agent):
+    """优先使用配置 UA 执行签到；若服务端判定设备不一致，再改用原生 UA 重试一次。"""
+    result = runner(user_agent)
+    if (isinstance(result, dict) and user_agent
+            and result.get('reason') in ('device-mismatch', 'http-auth-rejected')):
+        _log("🔄 配置的 User-Agent 未通过服务端设备校验，尝试改用浏览器原生 User-Agent 重试…")
+        result = runner(None)
+    return result
 
 
 def _run_cdp(cookie_header, user_agent, headless):
-    """尝试使用 CDP 模式（远程 CDP 端点或本地已安装浏览器）执行签到。
+    """尝试使用 CDP 模式（本机回环 CDP 端点或本地已安装浏览器）执行签到。
 
     若未配置 CDP 端点且未找到本地浏览器，返回 None。
     """
     cdp_url = os.environ.get('GLADOS_CDP_URL', '').strip()
     if cdp_url:
-        result = _try_remote_cdp(cdp_url, cookie_header, user_agent=user_agent)
-        if (isinstance(result, dict) and user_agent
-                and result.get('reason') in ('device-mismatch', 'http-auth-rejected')):
-            _log("🔄 配置的 User-Agent 未通过服务端设备校验，尝试改用浏览器原生 User-Agent 重试…")
-            result = _try_remote_cdp(cdp_url, cookie_header, user_agent=None)
-        return result
+        return _with_native_ua_retry(
+            lambda ua: _try_remote_cdp(cdp_url, cookie_header, user_agent=ua),
+            user_agent,
+        )
 
     browser_path = find_browser_executable()
     if browser_path:
         _log(f"🌐 优先使用系统已安装浏览器: {browser_path}")
-        result = _try_domains_cdp(browser_path, cookie_header, headless, user_agent=user_agent)
-        if (isinstance(result, dict) and user_agent
-                and result.get('reason') in ('device-mismatch', 'http-auth-rejected')):
-            _log("🔄 配置的 User-Agent 未通过服务端设备校验，尝试改用浏览器原生 User-Agent 重试…")
-            result = _try_domains_cdp(browser_path, cookie_header, headless, user_agent=None)
-        return result
+        return _with_native_ua_retry(
+            lambda ua: _try_domains_cdp(browser_path, cookie_header, headless, user_agent=ua),
+            user_agent,
+        )
 
     return None
 
