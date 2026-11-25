@@ -67,7 +67,7 @@ docker build -f docs/examples/ledger/Dockerfile -t glados-ledger-guide:0.2.1 .
 docker run --rm --network none --read-only glados-ledger-guide:0.2.1
 ```
 
-样例给出三天的流水：今天签到 +4，昨天补偿 +3，前天签到 +2。昨天的补偿使连续签到中断，所以输出应为「截至该日可见流水连续 **1 天**」。下一行 `GET /api/user/points (loopback), 1 request` 表示日报只读取了一次容器内的样例积分接口。日期会随运行日变化。示例直接调用仓库日报入口。[样例源码](examples/ledger/demo.py) · [Docker 的 none 网络](https://docs.docker.com/engine/network/drivers/none/)
+样例给出三天的流水：今天签到 +4，昨天补偿 +3，前天签到 +2。昨天的补偿使连续签到中断，所以输出应为「截至该日可见流水连续 **1 天**」。下一行 `GET /api/user/points (loopback), 1 request` 表示日报只读取了一次容器内的样例积分接口。日期会随运行日变化。默认入口 `demo.py` 使用合成数据，给这个示例设置签到环境变量也只会得到样例结果。要核对个人账本，可以查看已配置账号的 [Daily Streak Report 运行摘要](https://github.com/lankerr/2026-glados-checkin/actions/workflows/streak.yml)。[样例源码](examples/ledger/demo.py) · [Docker 的 none 网络](https://docs.docker.com/engine/network/drivers/none/)
 
 ![在 x86-64 和 ARM64 Linux 容器中运行同一份只读日报得到的终端输出](assets/desk-guide/docker.png)
 
