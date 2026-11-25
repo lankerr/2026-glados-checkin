@@ -62,9 +62,9 @@ def fixture(tls, requests):
                     requests.append((method, path))
                     mime = 'application/json'
                     if path == '/api/user/status':
-                        body = json.dumps({'code':0, 'data':{'email':'qa@example.test'}})
+                        body = json.dumps({'code':'0', 'data':{'email':'qa@example.test'}})
                     elif path == '/api/user/points':
-                        body = json.dumps({'points':'17', 'history':[{
+                        body = json.dumps({'code':'0', 'points':'17', 'history':[{
                             'time':int(time.time()*1000)-1000, 'business':'system:checkin','change':2}]})
                     else:
                         mime = 'text/html'

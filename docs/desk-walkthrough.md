@@ -2,13 +2,13 @@
 
 看到微信通知「成功 0/1」或「未收到有效 API 响应」，当时能确定的是脚本没读到有效结果。要知道今天签没签，打开官网查当天的积分流水。已经有定时任务的用户，可以用独立工作台核对一次，无需再提交签到。
 
-本教程对应工作台 **0.2.1**，实测于 **2026-11-22**。浏览器截图都来自本地模拟账号。Chrome 示例的余额是 37，Firefox 示例的余额是 17。只想核对自己账号的读者看前三节即可，NAS 用户可以直接看[容器实验](#container)。
+本教程使用工作台 **0.2.2**。步骤配图保留了 11 月 22 日用 0.2.1 和模拟账号拍摄的界面，新安装时请在扩展管理页确认版本为 **0.2.2**。Chrome 示例的余额是 37，Firefox 示例的余额是 17。只想核对自己账号的读者看前三节即可，NAS 用户可以直接看[容器实验](#container)。
 
-## 一、安装签到工作台 0.2.1
+## 一、安装签到工作台 0.2.2
 
-1. 前往 **[Releases v2026.11.24](https://github.com/lankerr/2026-glados-checkin/releases/tag/v2026.11.24)** 直接下载 `glados-desk-chromium-0.2.1.zip`（Chrome / Edge）或 `glados-desk-firefox-0.2.1.zip`（Firefox 140+），无需登录即可下载。如浏览器中曾安装旧版 `0.1.x` 插件，请先将其移除。
-2. 解压 `glados-desk-chromium-0.2.1.zip`（首次试用也可以在 Chrome 或 Edge 的头像菜单新建一个独立浏览器配置）。Chrome 在地址栏输入 `chrome://extensions`，Edge 输入 `edge://extensions`。打开「开发者模式」，点击「加载已解压的扩展程序」，选中能直接看到 `manifest.json` 的那层文件夹。看到下图中的「GLaDOS 签到台 0.2.1」且开关已开启，就可以从工具栏的扩展菜单打开它。[Chrome 安装说明](https://developer.chrome.com/docs/extensions/get-started/tutorial/hello-world)
-3. Firefox 用户解压 `glados-desk-firefox-0.2.1.zip`，在 Firefox 140 或更新版本打开 `about:debugging#/runtime/this-firefox`，点击「临时载入附加组件」并选择 `manifest.json`。重启 Firefox 后需再次载入。[Mozilla 临时安装说明](https://extensionworkshop.com/documentation/develop/temporary-installation-in-firefox/)
+1. 前往 **[Releases v2026.11.26](https://github.com/lankerr/2026-glados-checkin/releases/tag/v2026.11.26)** 直接下载 `glados-desk-chromium-0.2.2.zip`（Chrome / Edge）或 `glados-desk-firefox-0.2.2.zip`（Firefox 140+），无需登录即可下载。如浏览器中曾安装旧版 `0.1.x` 插件，请先将其移除。
+2. 解压 `glados-desk-chromium-0.2.2.zip`（首次试用也可以在 Chrome 或 Edge 的头像菜单新建一个独立浏览器配置）。Chrome 在地址栏输入 `chrome://extensions`，Edge 输入 `edge://extensions`。打开「开发者模式」，点击「加载已解压的扩展程序」，选中能直接看到 `manifest.json` 的那层文件夹。看到工作台版本为 0.2.2 且开关已开启，就可以从工具栏的扩展菜单打开它。[Chrome 安装说明](https://developer.chrome.com/docs/extensions/get-started/tutorial/hello-world)
+3. Firefox 用户解压 `glados-desk-firefox-0.2.2.zip`，在 Firefox 140 或更新版本打开 `about:debugging#/runtime/this-firefox`，点击「临时载入附加组件」并选择 `manifest.json`。重启 Firefox 后需再次载入。[Mozilla 临时安装说明](https://extensionworkshop.com/documentation/develop/temporary-installation-in-firefox/)
 
 ![Chrome 扩展管理页中的加载入口、扩展名称、版本和启用开关](assets/desk-guide/installed.png)
 
@@ -71,7 +71,7 @@ docker run --rm --network none --read-only glados-ledger-guide:0.2.1
 
 ![在 x86-64 和 ARM64 Linux 容器中运行同一份只读日报得到的终端输出](assets/desk-guide/docker.png)
 
-上图记录的是 Windows 上 Docker Desktop 的实际输出。x86-64 容器原生运行，ARM64 容器在同一台 x86-64 主机上模拟执行，两者均通过。下面的命令会运行镜像中的日报回归测试。用 `v2026.11.24` 源码构建时，应看到 `Ran 7 tests`，下一行为 `OK`，命令退出码为 0。[发布版 CI 日志](https://github.com/lankerr/2026-glados-checkin/actions/runs/45410511565)
+上图记录的是 Windows 上 Docker Desktop 的实际输出。x86-64 容器原生运行，ARM64 容器在同一台 x86-64 主机上模拟执行，两者均通过。下面的命令会运行镜像中的日报回归测试。用 `v2026.11.26` 源码构建时，应看到 `Ran 7 tests`，下一行为 `OK`，命令退出码为 0。[发布版 CI 日志](https://github.com/lankerr/2026-glados-checkin/actions/runs/45410511565)
 
 ```sh
 docker run --rm --network none --read-only --tmpfs /tmp glados-ledger-guide:0.2.1 python -m unittest discover -s tests -p test_update_streak.py
@@ -99,7 +99,7 @@ docker run --rm --platform linux/arm64 --network none --read-only glados-ledger-
 | GitHub Actions 的日报 | [打开一次成功运行的日报](https://github.com/lankerr/2026-glados-checkin/actions/runs/44975600453)，在 Summary 读「最近可见签到」和「连续天数」。统计窗口为最近返回的 10 条流水；更早的记录需要其他来源。 | 感谢 @lankerr 补全 `system:checkin` 的识别。[PR #49](https://github.com/lankerr/2026-glados-checkin/pull/49) |
 | NixOS 定时器 | 用模拟配置求值后，主线的任务类型为 `oneshot`，按系统本地时间 09:30 触发，随机延迟最多 10 分钟，`Persistent` 为真。本次验证了生成的配置，未做整机启动或跨天唤醒测试。 | 感谢 @Initsnow 提供 Flake 与 NixOS 模块。[PR #3](https://github.com/lankerr/2026-glados-checkin/pull/3) |
 | PR #47 的系统浏览器方案 | 对 PR 提交 `27b0b1a` 的 NixOS 模块单独求值，读到了新增的状态目录 `glados-checkin` 和工作目录 `%S/glados-checkin`。实测覆盖服务配置；浏览器登录和官网验证仍由用户在官网完成。 | 感谢 @Initsnow 提供部署实现。[PR #47](https://github.com/lankerr/2026-glados-checkin/pull/47) |
-| 旧版插件的中文页面修复（PR #50 已关闭） | 这项提案针对旧版插件。离线测试中，它能排除进入验证前的响应，但仍可能误认其他来源的同名路径。0.2.1 工作台直接读取带日期和类型的积分流水。 | 感谢 @EchoChan314 在中文 Edge 找出按钮识别和误报两个问题。[PR #50](https://github.com/lankerr/2026-glados-checkin/pull/50) |
+| 旧版插件的中文页面修复（PR #50 已关闭） | 这项提案针对旧版插件。离线测试中，它能排除进入验证前的响应，但仍可能误认其他来源的同名路径。0.2.2 工作台直接读取带日期和类型的积分流水。 | 感谢 @EchoChan314 在中文 Edge 找出按钮识别和误报两个问题。[PR #50](https://github.com/lankerr/2026-glados-checkin/pull/50) |
 | 微信和 Telegram 通知 | 16 项离线通知测试通过，覆盖 Server酱请求格式、多渠道分发和诊断模式跳过推送等场景。实际手机收件本轮未测。 | 感谢 @Ch3nSir 提供 Server酱，@Initsnow 提供 Telegram 推送。[PR #27](https://github.com/lankerr/2026-glados-checkin/pull/27) · [PR #3](https://github.com/lankerr/2026-glados-checkin/pull/3) |
 
 在已安装 Nix 的环境，从仓库根目录可以复查 NixOS 的配置值。命令读取仓库锁定的 nixpkgs，首次求值需要联网。
