@@ -20,10 +20,10 @@ def exercise(context, screenshot, extension_id=None, guide_dir=None):
         if request.url.endswith("/api/user/status"):
             state["calls"] += 1
             email = "second" if state["switched"] and state["calls"] % 2 == 0 else "sample"
-            route.fulfill(status=state["status"], json={"code": 0, "data": {"email": email + "@example.test"}})
+            route.fulfill(status=state["status"], json={"code": "0", "data": {"email": email + "@example.test"}})
         elif request.url.endswith("/api/user/points"):
             now = int(time.time() * 1000) - 1000
-            route.fulfill(json={"points":"37", "history":[
+            route.fulfill(json={"code":"0", "points":"37", "history":[
                 {"time":now, "business":state["business"], "change":4},
                 {"time":now-86400000, "business":"promotion", "change":3},
             ]})
