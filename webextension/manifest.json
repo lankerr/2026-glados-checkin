@@ -1,0 +1,13 @@
+{
+  "manifest_version": 3,
+  "name": "__MSG_name__",
+  "version": "0.2.1",
+  "description": "__MSG_description__",
+  "default_locale": "zh_CN",
+  "permissions": ["storage", "alarms", "notifications", "scripting"],
+  "host_permissions": ["https://glados.cloud/*", "https://glados.rocks/*", "https://glados.network/*", "https://glados.space/*", "https://glados.one/*"],
+  "action": { "default_title": "__MSG_name__" },
+  "options_ui": { "page": "console.html", "open_in_tab": true },
+  "background": { "service_worker": "background.js" },
+  "icons": { "16": "icons/icon16.png", "48": "icons/icon48.png", "128": "icons/icon128.png" }
+}

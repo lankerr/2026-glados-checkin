@@ -1,0 +1,53 @@
+name: Desk pilot
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'webextension/**'
+      - 'extension/icons/**'
+      - 'docs/examples/ledger/**'
+      - 'update_streak.py'
+      - 'checkin.py'
+      - 'tests/test_update_streak.py'
+      - '.github/workflows/desk-pilot.yml'
+  pull_request:
+    paths:
+      - 'webextension/**'
+      - 'extension/icons/**'
+      - 'docs/examples/ledger/**'
+      - 'update_streak.py'
+      - 'checkin.py'
+      - 'tests/test_update_streak.py'
+      - '.github/workflows/desk-pilot.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  ledger-demo:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v6
+      - run: docker build -f docs/examples/ledger/Dockerfile -t glados-ledger-guide .
+      - run: docker run --rm --network none --read-only glados-ledger-guide
+      - run: docker run --rm --network none --read-only --tmpfs /tmp glados-ledger-guide python -m unittest discover -s tests -p test_update_streak.py
+
+  package:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: node --test webextension/tests/core.test.cjs
+      - run: python3 webextension/build.py --out dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: glados-desk-pilot
+          path: dist/*.zip
+          if-no-files-found: error

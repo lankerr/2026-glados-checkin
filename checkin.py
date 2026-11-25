@@ -34,8 +34,11 @@ if sys.platform.startswith('win'):
 # 域名优先级：Cloud 第一
 DOMAINS = [
     "https://glados.cloud",
-    "https://glados.rocks", 
+    "https://glados.rocks",
     "https://glados.network",
+    "https://glados.space",
+    # 旧域名留作最后回退（2026-11-17 实测仍在线）
+    "https://glados.one",
 ]
 
 DEFAULT_USER_AGENT = (
@@ -345,7 +348,7 @@ def summarize_checkin_failure(result):
             label = '网络或服务暂时异常，未收到有效 API 响应'
         label += '；本次请求失败，今日签到状态未知'
     elif is_turnstile_checkin_result(result):
-        label = '服务端要求 Cloudflare Turnstile 人机验证，本次未入账；请通过官网浏览器手动签到'
+        label = '服务端要求 Cloudflare Turnstile 人机验证。请先核对官网流水，再按页面提示完成签到'
     elif reason == 'device-mismatch':
         label = '服务端拒绝设备校验；请核对会话和 User-Agent 配置'
     elif 'automated check-in detected' in message:
@@ -541,6 +544,35 @@ def checkin_with_retry(client, attempts=3, delay_seconds=60):
 
 # ================= 核心逻辑 =================
 
+def points_read_error(result):
+    """Return only fixed categories and bounded numeric codes for a failed read."""
+    if not isinstance(result, dict):
+        return '响应格式异常，未读到积分数据'
+    status = result.get('http_status')
+    if type(status) is int and 400 <= status <= 599:
+        if status == 401:
+            return 'HTTP 401，会话未通过认证，请在官网确认登录状态'
+        if status == 403:
+            return 'HTTP 403，访问被拒绝，请在官网查看访问提示'
+        return f'HTTP {status}，积分服务请求失败'
+    if result.get('invalid_headers') is True:
+        return '请求头格式无效，请检查 Cookie 和 User-Agent 的配置格式'
+    if result.get('invalid_response') is True:
+        return '响应格式异常，未读到有效 JSON'
+    if result.get('timed_out') is True:
+        return '积分服务请求超时'
+    if result.get('request_failed') is True:
+        return '网络或积分服务请求失败'
+    code = result.get('code', 0)
+    if not ((type(code) is int and code == 0) or code == '0'):
+        if type(code) is int and -999 <= code <= 999:
+            return f'积分接口返回错误（code={code}）'
+        return '积分接口返回错误'
+    if parse_finite_number(result.get('points')) is None:
+        return '响应缺少有效的积分余额'
+    return ''
+
+
 class GLaDOS:
     def __init__(self, cookie):
         self.cookie = cookie
@@ -548,9 +580,13 @@ class GLaDOS:
         self.email = "?"
         self.left_days = "?"
         self.points = "?"
+        self.points_error = ''
         self.points_change = "?"
         self.points_change_time = "未知"
         self.today_positive_change = None
+        self.today_rewards_total = None
+        self.today_rewards_count = 0
+        self.recent_entries = []
         self.has_dated_history = False
         self.exchange_info = ""
         self.exchange_result = ""
@@ -629,7 +665,8 @@ class GLaDOS:
     def get_points(self):
         """获取积分、变化历史、兑换计划"""
         res = self.req('GET', '/api/user/points')
-        if res and 'points' in res:
+        self.points_error = points_read_error(res)
+        if not self.points_error:
             # 当前积分（保留非零小数，不因 split('.') 截断小数奖励）
             formatted_pts = format_points_number(res.get('points', '0'), signed=False)
             self.points = formatted_pts if formatted_pts is not None else '0'
@@ -638,8 +675,12 @@ class GLaDOS:
             self.points_change = '?'
             self.points_change_time = '未知'
             self.today_positive_change = None
+            self.today_rewards_total = None
+            self.today_rewards_count = 0
+            self.recent_entries = []
             self.has_dated_history = False
             today_bj = beijing_now().strftime('%Y-%m-%d')
+            today_reward_values = []
 
             history = res.get('history')
             if not isinstance(history, list):
@@ -657,20 +698,34 @@ class GLaDOS:
                 for item in history[:10]:
                     if not isinstance(item, dict):
                         continue
-                    _, entry_date = format_beijing_timestamp_ms(item.get('time'))
+                    formatted_full, entry_date = format_beijing_timestamp_ms(item.get('time'))
                     if entry_date:
                         self.has_dated_history = True
                     entry_num = parse_finite_number(item.get('change'))
                     business = str(item.get('business', '')).strip().lower()
+                    if len(self.recent_entries) < 10:
+                        self.recent_entries.append({
+                            'date': entry_date,
+                            'time': (formatted_full or '').split(' ')[0],
+                            'change': format_points_number(entry_num, signed=True) or '?',
+                            'business': business,
+                        })
                     if (
-                        self.today_positive_change is None
-                        and entry_date == today_bj
+                        entry_date == today_bj
                         and entry_num is not None
                         and entry_num > 0
                         and 'exchange' not in business
                         and 'refund' not in business
                     ):
-                        self.today_positive_change = format_points_number(entry_num, signed=True)
+                        if self.today_positive_change is None:
+                            self.today_positive_change = format_points_number(entry_num, signed=True)
+                        today_reward_values.append(entry_num)
+
+                if today_reward_values:
+                    total = format_points_number(sum(today_reward_values), signed=True)
+                    if total is not None:
+                        self.today_rewards_total = total
+                        self.today_rewards_count = len(today_reward_values)
 
             # 兑换计划
             plans = res.get('plans', {})
@@ -876,6 +931,15 @@ def telegram_push(token, chat_id, title, content):
         log(f"❌ Telegram 推送失败: {e}")
         return False
 
+def today_rewards_summary(client):
+    """Describe the eligible subtotal within the first ten returned ledger entries."""
+    total = getattr(client, 'today_rewards_total', None)
+    count = getattr(client, 'today_rewards_count', 0) or 0
+    if not isinstance(total, str):
+        return ''
+    return f'；今日符合条件的正变动小计 {total} 分（已返回前10条流水中 {count} 笔；排除 exchange/refund 及无效日期/金额，完整性未确认，非全天合计，未关联本次请求）'
+
+
 def summarize_readonly_ledger(client, status_ok, points_ok):
     """Describe ledger observations in read-only mode without sending a check-in."""
     if not status_ok:
@@ -912,10 +976,36 @@ def render_account_card(
         if client.points_change != '?' else '未获取'
     )
     days_label = f'{client.left_days} 天' if client.left_days != '?' else '未获取'
+    ledger_table = ''
+    recent = getattr(client, 'recent_entries', None)
+    if isinstance(recent, list) and recent:
+        rows = ''.join(
+            '<tr>'
+            f'<td style="padding:2px 8px;color:#666;">{html.escape(e["time"] or e["date"] or "?")}</td>'
+            f'<td style="padding:2px 8px;text-align:right;font-weight:bold;color:'
+            f'{"#2e7d32" if str(e["change"]).startswith("+") else "#c62828"};">{html.escape(str(e["change"]))}</td>'
+            f'<td style="padding:2px 8px;color:#999;">{html.escape(e["business"] or "-")}</td>'
+            '</tr>'
+            for e in recent[:6]
+        )
+        extra = f'<tr><td colspan="3" style="padding:2px 8px;color:#999;">… 共 {len(recent)} 笔（API 返回窗口）</td></tr>' if len(recent) > 6 else ''
+        ledger_table = (
+            '<div style="margin:8px 0; padding:8px; background:#fafafa; border-radius:8px;">'
+            '<p style="margin:0 0 4px 0; color:#333; font-weight:bold; font-size:14px;">📅 近期积分流水</p>'
+            f'<table style="border-collapse:collapse; font-size:13px;">{rows}{extra}</table></div>'
+        )
+    today_gain_line = ''
+    if isinstance(getattr(client, 'today_rewards_total', None), str):
+        today_gain_line = (
+            '\n    <p style="margin:8px 0; color:#000; font-size:16px;">'
+            f'<b>今日符合条件的正变动小计:</b> <span style="color:#2e7d32; font-size:20px; font-weight:bold;">'
+            f'{html.escape(str(client.today_rewards_total))}</span>'
+            f' 分（已返回前10条流水中 {client.today_rewards_count} 笔；排除 exchange/refund 及无效日期/金额，完整性未确认，非全天合计，未关联本次请求）</p>'
+        )
     return f"""
 <div style="border:2px solid #333; padding:15px; margin-bottom:15px; border-radius:10px; background:#fff;">
     <h3 style="margin:0 0 15px 0; color:#333; border-bottom:2px solid #333; padding-bottom:8px;">👤 {html.escape(account_label)}</h3>
-    <p style="margin:8px 0; color:#000; font-size:16px;"><b>当前积分:</b> <span style="color:#e74c3c; font-size:22px; font-weight:bold;">{html.escape(points_label)}</span></p>
+    <p style="margin:8px 0; color:#000; font-size:16px;"><b>当前积分:</b> <span style="color:#e74c3c; font-size:22px; font-weight:bold;">{html.escape(points_label)}</span></p>{today_gain_line}{ledger_table}
     <p style="margin:8px 0; color:#000; font-size:15px;"><b>{html.escape(gain_heading)}:</b> {html.escape(gain_summary)}</p>
     <p style="margin:8px 0; color:#666; font-size:14px;"><b>最近一笔积分变动:</b> {html.escape(history_label)}</p>
     <p style="margin:8px 0; color:#000; font-size:16px;"><b>剩余天数:</b> <span style="font-weight:bold;">{html.escape(days_label)}</span></p>
@@ -952,6 +1042,7 @@ def notify_status_accounts(cookies):
             msg = '登录状态读取未成功，请检查会话配置或网络（未发起签到请求）'
 
         gain_summary = summarize_readonly_ledger(g, status_ok, points_ok)
+        gain_summary += today_rewards_summary(g)
         log(
             f"{'✅' if query_ok else '❌'} 账号 {i} | 积分: {g.points} | 流水观察: {gain_summary} | "
             f"天数: {g.left_days} | 模式: {msg}"
@@ -1073,6 +1164,7 @@ def main():
             g.get_status()
             g.get_points()
             gain_summary = summarize_current_run_gain(res, is_success, g)
+            gain_summary += today_rewards_summary(g)
 
             # 2.5 Auto exchange (issue #11): runs only after a normal check-in
             # so failed check-ins do not trigger unexpected redemptions.
@@ -1136,3 +1228,4 @@ def main():
 
 if __name__ == '__main__':
     sys.exit(main())
+

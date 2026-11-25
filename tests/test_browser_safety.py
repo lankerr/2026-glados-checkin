@@ -1,4 +1,5 @@
 """Synthetic safety tests: no HTTP or real browser."""
+import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -80,15 +81,49 @@ class SafetyTests(unittest.TestCase):
             self.assertFalse(b._is_checkin(url,'POST',b.DOMAINS[0]))
     def test_concurrent_lock_fails_closed_and_releases(self):
         with patch.object(b,'profile_dir',return_value=self.tmp.name):
-            with b._exclusive_guard():
+            with b._exclusive_guard(EMAIL):
                 with self.assertRaises(FileExistsError):
-                    with b._exclusive_guard(): pass
-            with b._exclusive_guard(): pass
+                    with b._exclusive_guard(EMAIL): pass
+            with b._exclusive_guard(EMAIL): pass
     def test_unresolved_blocks_before_launch(self):
         with patch.object(b,'profile_dir',return_value=self.tmp.name):
-            with b._exclusive_guard() as marker: marker.touch()
+            with b._exclusive_guard(EMAIL) as marker: marker.touch()
             with patch.object(b,'_pick_context',side_effect=AssertionError('NO BROWSER')):
                 self.assertEqual(b.browser_checkin(COOKIE,'synthetic',expected_email=EMAIL)['reason'],'browser-outcome-unresolved')
+
+    def test_pending_account_does_not_block_another_account(self):
+        with patch.object(b, 'profile_dir', return_value=self.tmp.name):
+            with b._exclusive_guard(EMAIL) as first:
+                first.touch()
+            with b._exclusive_guard('other@example.invalid') as second:
+                self.assertNotEqual(first, second)
+            self.assertNotIn(EMAIL, first.name)
+            self.assertTrue(first.exists())
+
+    def test_pending_account_stays_blocked_across_dates_and_case_changes(self):
+        with patch.object(b, 'profile_dir', return_value=self.tmp.name):
+            with b._exclusive_guard(EMAIL) as marker:
+                marker.touch()
+                os.utime(marker, (1_600_000_000, 1_600_000_000))
+            with self.assertRaises(b.UnresolvedSubmission):
+                with b._exclusive_guard(EMAIL.upper()):
+                    self.fail('unreconciled account passed the guard')
+            marker.unlink()
+            with b._exclusive_guard(EMAIL) as after_reconciliation:
+                self.assertEqual(after_reconciliation, marker)
+
+    def test_legacy_marker_has_no_owner_and_requires_manual_reconciliation(self):
+        root = Path(self.tmp.name)
+        legacy = root / 'unresolved-2024-01-01'
+        legacy.touch()
+        with patch.object(b, 'profile_dir', return_value=root):
+            for account in (EMAIL, 'other@example.invalid'):
+                self.assertEqual(b.browser_checkin(COOKIE, 'synthetic', expected_email=account)['reason'],
+                                 'browser-outcome-unresolved')
+            self.assertTrue(legacy.exists())
+            self.assertFalse((root / 'browser.lock').exists())
+            legacy.unlink()
+            with b._exclusive_guard(EMAIL): pass
     def test_outer_layer_never_retries_ambiguous(self):
         client=checkin.GLaDOS(COOKIE)
         client.req=Mock(return_value={'data':{'email':EMAIL}})

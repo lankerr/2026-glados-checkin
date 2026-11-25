@@ -2,21 +2,20 @@
 
 Each call uses a fresh, temporary browser profile. It never reads the old shared
 profile. Only a complete configured gld session is accepted. Status identity must
-match before a click. One POST maximum; ambiguous outcomes block later calls for
-this local Beijing date until manually reconciled. No CAPTCHA bypass is provided.
+match before a click. An ambiguous submission blocks that account until reconciled.
 """
+import hashlib
 import json
 import os
 import re
 import tempfile
 from contextlib import contextmanager
-from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from urllib.parse import urlsplit
 
 BROWSER_CHANNELS = ('chrome', 'msedge', None)
 CHECKIN_PAGE_PATH = '/console/checkin'
-DOMAINS = ('https://glados.cloud', 'https://glados.rocks')
+DOMAINS = ('https://glados.cloud', 'https://glados.rocks', 'https://glados.network', 'https://glados.space', 'https://glados.one')
 RESULT_WAIT_SECONDS = 150
 SESSION_COOKIE_NAMES = ('gld:sess', 'gld:sess.sig', 'koa:sess', 'koa:sess.sig')
 
@@ -60,19 +59,35 @@ def _valid_cookie(header):
 
 
 @contextmanager
-def _exclusive_guard():
+def _exclusive_guard(expected_email):
     root = Path(profile_dir())
-    root.mkdir(parents=True, exist_ok=True)
+    root.mkdir(mode=0o700, parents=True, exist_ok=True)
     # Atomic creation also excludes another process. A crash fails closed:
     # a human must check no run remains before removing this non-secret lock.
     lock = root / 'browser.lock'
     fd = os.open(str(lock), os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
     try:
         os.close(fd)
-        day = datetime.now(timezone(timedelta(hours=8))).strftime('%Y-%m-%d')
-        yield root / ('unresolved-' + day)
+        # Older versions left a date but no account. Keep the global lock and
+        # honor all such markers until the operator reconciles those submissions.
+        for entry in root.iterdir():
+            if re.fullmatch(r'unresolved-[0-9]{4}-[0-9]{2}-[0-9]{2}', entry.name):
+                raise UnresolvedSubmission
+        identity = expected_email.strip().casefold().encode('utf-8')
+        account_key = hashlib.sha256(identity).hexdigest()
+        marker = root / ('pending-' + account_key)
+        try:
+            marker.lstat()
+        except FileNotFoundError:
+            yield marker
+        else:
+            raise UnresolvedSubmission
     finally:
         lock.unlink()
+
+
+class UnresolvedSubmission(Exception):
+    """A prior submission still needs manual reconciliation."""
 
 
 def _pick_context(pw, headless, user_agent=None, directory=None):
@@ -168,15 +183,13 @@ def browser_checkin(cookie_header, user_agent, domains=None, expected_email=None
     selected = tuple(domains or DOMAINS)
     if not selected or any(base not in DOMAINS for base in selected):
         return _failure('browser-origin-invalid')
-    try:
-        from playwright.sync_api import sync_playwright
-    except ImportError:
-        return _failure('browser-checkin-unavailable')
     headless = os.environ.get('GLADOS_BROWSER_HEADLESS', '').lower() in ('1', 'true', 'yes')
     try:
-        with _exclusive_guard() as marker:
-            if marker.exists():
-                return _failure('browser-outcome-unresolved')
+        with _exclusive_guard(expected_email) as marker:
+            try:
+                from playwright.sync_api import sync_playwright
+            except ImportError:
+                return _failure('browser-checkin-unavailable')
             # Temporary per-call storage: no prior-account cookies, localStorage,
             # service workers or persistent login state are imported/reused.
             with tempfile.TemporaryDirectory(prefix='glados-isolated-') as directory:
@@ -186,6 +199,8 @@ def browser_checkin(cookie_header, user_agent, domains=None, expected_email=None
                         return _try_domains(context, cookie_header, expected_email, marker, selected)
                     finally:
                         context.close()
+    except UnresolvedSubmission:
+        return _failure('browser-outcome-unresolved')
     except FileExistsError:
         return _failure('browser-busy')
     except Exception:

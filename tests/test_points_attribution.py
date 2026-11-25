@@ -70,3 +70,61 @@ class AttributionTests(unittest.TestCase):
             self.observe([{'time': MS, 'change': 2}]))
         self.assertIn('不据此推断封顶规则', summary)
         self.assertNotIn('受上限', summary)
+
+
+class TodayRewardsTotalTests(unittest.TestCase):
+    def test_sums_eligible_today_entries_in_returned_window(self):
+        client = checkin.GLaDOS('gld:sess=fake; gld:sess.sig=fake')
+        client.req = mock.Mock(return_value={'points': 44, 'history': [
+            {'change': '19', 'time': MS},
+            {'change': '10', 'time': MS},
+            {'change': '14', 'time': MS - 86400000},          # 昨天：不计
+            {'change': '-500', 'time': MS, 'business': 'exchange'},  # 兑换：不计
+            {'change': '1.5', 'time': MS},                    # 小数：计入
+        ], 'plans': {}})
+        with mock.patch('checkin.beijing_now', return_value=NOW):
+            client.get_points()
+        self.assertEqual(client.today_rewards_total, '+30.5')
+        self.assertEqual(client.today_rewards_count, 3)
+        summary = checkin.today_rewards_summary(client)
+        self.assertIn('今日符合条件的正变动小计 +30.5 分（已返回前10条流水中 3 笔', summary)
+
+    def test_no_today_entries_yields_empty_summary(self):
+        client = checkin.GLaDOS('gld:sess=fake; gld:sess.sig=fake')
+        client.req = mock.Mock(return_value={'points': 5, 'history': [
+            {'change': '14', 'time': MS - 86400000}], 'plans': {}})
+        with mock.patch('checkin.beijing_now', return_value=NOW):
+            client.get_points()
+        self.assertIsNone(client.today_rewards_total)
+        self.assertEqual(checkin.today_rewards_summary(client), '')
+
+    def test_push_card_shows_today_gain_line(self):
+        client = checkin.GLaDOS('gld:sess=fake; gld:sess.sig=fake')
+        client.req = mock.Mock(return_value={'points': 44, 'history': [
+            {'change': '19', 'time': MS}, {'change': '10', 'time': MS},
+        ], 'plans': {}})
+        with mock.patch('checkin.beijing_now', return_value=NOW):
+            client.get_points()
+        card = checkin.render_account_card(1, client, '观察', 'OK')
+        self.assertIn('今日符合条件的正变动小计', card)
+        self.assertIn('+29', card)
+        self.assertIn('已返回前10条流水中 2 笔', card)
+
+
+
+class RecentEntriesTests(unittest.TestCase):
+    def test_recent_entries_collected_and_card_renders_mini_ledger(self):
+        client = checkin.GLaDOS('gld:sess=fake; gld:sess.sig=fake')
+        client.req = mock.Mock(return_value={'points': 56, 'history': [
+            {'change': '12', 'time': MS},
+            {'change': '19', 'time': MS - 86400000},
+            {'change': '-500', 'time': MS - 86400000, 'business': 'exchange'},
+        ], 'plans': {}})
+        with mock.patch('checkin.beijing_now', return_value=NOW):
+            client.get_points()
+        self.assertEqual(len(client.recent_entries), 3)
+        self.assertEqual(client.recent_entries[0]['change'], '+12')
+        card = checkin.render_account_card(1, client, '观察', 'OK')
+        self.assertIn('近期积分流水', card)
+        self.assertIn('+12', card)
+        self.assertIn('-500', card)
