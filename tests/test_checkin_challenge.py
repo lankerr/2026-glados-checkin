@@ -52,7 +52,7 @@ class ChallengeTests(unittest.TestCase):
     @mock.patch('checkin.requests.get')
     def test_challenge_fallback_binds_post_and_token_to_issuing_origin(self, get, post, sleep):
         get.side_effect = [response({}, 500), response({'code': 0, 'nonce': NONCE, 'ttl': 300000})]
-        post.return_value = response({'code': 0})
+        post.return_value = response({'code': 0, 'message': 'Checkin!'})
 
         self.assertTrue(checkin.is_normal_checkin_result(checkin.GLaDOS(COOKIE).checkin()))
 
@@ -118,20 +118,18 @@ class ChallengeTests(unittest.TestCase):
     @mock.patch('checkin.time.sleep')
     @mock.patch('checkin.requests.post')
     @mock.patch('checkin.requests.get')
-    def test_transient_post_failure_obtains_fresh_nonce_for_next_attempt(self, get, post, sleep):
+    def test_lost_submission_response_does_not_trigger_another_attempt(self, get, post, sleep):
         get.side_effect = [
             response({'code': 0, 'nonce': NONCE, 'ttl': 300000}),
             response({'code': 0, 'nonce': 'another-nonce', 'ttl': 300000}),
         ]
         post.side_effect = [checkin.requests.ReadTimeout(COOKIE), response({'code': 0})]
         result, ok = checkin.checkin_with_retry(checkin.GLaDOS(COOKIE), attempts=2)
-        self.assertTrue(ok)
-        self.assertEqual(get.call_count, 2)
-        self.assertEqual(post.call_count, 2)
-        sent = [call.kwargs['json'] for call in post.call_args_list]
-        self.assertNotEqual(sent[0]['nonce'], sent[1]['nonce'])
-        self.assertNotEqual(sent[0]['proof'], sent[1]['proof'])
-        self.assertEqual(sleep.call_args_list, [mock.call(2.7), mock.call(60), mock.call(2.7)])
+        self.assertFalse(ok)
+        self.assertEqual(result['reason'], 'submission-unknown')
+        get.assert_called_once()
+        post.assert_called_once()
+        self.assertFalse(post.call_args.kwargs['allow_redirects'])
 
     @mock.patch('checkin.time.sleep')
     @mock.patch('checkin.requests.post')
@@ -151,7 +149,7 @@ class ChallengeTests(unittest.TestCase):
     @mock.patch('checkin.requests.get')
     def test_ttl_just_above_wait_allows_submission_before_expiry(self, get, post, sleep, timer):
         get.return_value = response({'code': 0, 'nonce': NONCE, 'ttl': 2701})
-        post.return_value = response({'code': 0})
+        post.return_value = response({'code': 0, 'message': 'Checkin!'})
 
         result = checkin.GLaDOS(COOKIE).checkin()
 

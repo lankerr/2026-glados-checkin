@@ -14,6 +14,12 @@
 | 在微信或 Telegram 收到运行结果 | 在[使用手册](usage.md)选择通知渠道。消息中的「查询失败」表示这次没读到有效数据，可回官网核对。 | 感谢 @Ch3nSir 添加 Server酱 Turbo / Server酱³，感谢 @Initsnow 添加 Telegram 推送及通知级别。[#27](https://github.com/lankerr/2026-glados-checkin/pull/27) · [#3](https://github.com/lankerr/2026-glados-checkin/pull/3) |
 | 在 NixOS 管理本地任务 | 主线已有 [NixOS 模块](../glados-checkin.nix)，可以用 systemd 管理服务与定时器。PR #47 提出的浏览器驱动另列在下表。 | 感谢 @Initsnow 提供 Flake 和模块，感谢 @Ch3nSir 补充通知配置。[#3](https://github.com/lankerr/2026-glados-checkin/pull/3) · [#27](https://github.com/lankerr/2026-glados-checkin/pull/27) |
 
+安卓用户可直接运行[手机流水核对](android-ledger.md)。脚本逐账号只读查询，当天有明确签到入账才计入通知数字。感谢 @chengchang1987-cloud 提出手机端需求，@lankerr 提供 Termux 方案。[Issue #40](https://github.com/lankerr/2026-glados-checkin/issues/40) · [PR #54](https://github.com/lankerr/2026-glados-checkin/pull/54)
+
+本地脚本发出签到 API 请求后，如果连接中断、服务返回错误或成功信息不明确，本轮会停止重发，改查积分流水，并跳过兑换。即便查到当天入账，通知仍会保留本次提交待核对的状态。跨进程保存提交标记仍在草稿中。感谢 @lankerr 整理重复提交的场景。[PR #38](https://github.com/lankerr/2026-glados-checkin/pull/38)
+
+NixOS 用户可选 `environmentFile` 和 `package`，让 systemd 在运行时读取凭据，并选择本机的软件包。感谢 @Initsnow 提供这两个设置的设计。[配置示例](usage.md#nixos) · [PR #47](https://github.com/lankerr/2026-glados-checkin/pull/47)
+
 ## 安装签到工作台 0.2.1
 
 第一次安装可跟着[工作台图解与 Docker 实验](desk-walkthrough.md)操作，里面有余额相同、入账类型不同的两张对照图。

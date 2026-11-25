@@ -25,17 +25,17 @@ class TransientFailureTests(unittest.TestCase):
             self.addCleanup(patch.stop)
 
     @mock.patch('checkin.log')
-    @mock.patch('checkin.requests.post')
-    def test_server_error_and_timeouts_preserve_only_safe_metadata(self, post, log):
+    @mock.patch('checkin.requests.get')
+    def test_read_failures_preserve_only_safe_metadata(self, get, log):
         response = mock.Mock(status_code=500)
         response.json.return_value = {'message': COOKIE}
-        post.side_effect = [response] + [
+        get.side_effect = [response] + [
             checkin.requests.ReadTimeout(COOKIE) for _ in checkin.DOMAINS[1:]
         ]
 
-        result = checkin.GLaDOS(COOKIE).req('POST', '/api/user/checkin')
+        result = checkin.GLaDOS(COOKIE).req('GET', '/api/user/points')
 
-        self.assertEqual(post.call_count, len(checkin.DOMAINS))
+        self.assertEqual(get.call_count, len(checkin.DOMAINS))
         response.json.assert_not_called()
         self.assertEqual(result['http_status'], 500)
         self.assertTrue(result['timed_out'])
@@ -48,18 +48,18 @@ class TransientFailureTests(unittest.TestCase):
         for private in ('private-session', 'private-signature'):
             self.assertNotIn(private, str(result) + str(log.call_args_list) + summary)
 
-    @mock.patch('checkin.requests.post')
-    def test_fallback_success_discards_previous_failure_metadata(self, post):
+    @mock.patch('checkin.requests.get')
+    def test_readonly_fallback_success_discards_previous_failure_metadata(self, get):
         unavailable = mock.Mock(status_code=503)
         ok = mock.Mock(status_code=200)
-        ok.json.return_value = {'code': 0, 'message': 'Checkin! Got 11 Points'}
-        post.side_effect = [unavailable, ok]
+        ok.json.return_value = {'points': 11, 'history': []}
+        get.side_effect = [unavailable, ok]
 
-        result = checkin.GLaDOS(COOKIE).req('POST', '/api/user/checkin')
+        result = checkin.GLaDOS(COOKIE).req('GET', '/api/user/points')
 
         self.assertEqual(result, ok.json.return_value)
         self.assertNotIn('request_failed', result)
-        self.assertTrue(checkin.is_normal_checkin_result(result))
+        self.assertEqual(get.call_count, 2)
 
     @mock.patch('checkin.log')
     @mock.patch('checkin.requests.post')
@@ -82,6 +82,57 @@ class TransientFailureTests(unittest.TestCase):
     def test_transport_failure_overrides_contradictory_success_fields(self):
         result = dict(FAILURE, code=0, message="Today's observation logged.")
         self.assertFalse(checkin.is_normal_checkin_result(result))
+
+    @mock.patch('checkin.requests.post')
+    def test_unconfirmed_post_is_never_redirected_or_replayed(self, post):
+        for status, payload in [(307, {}), (503, {}), (200, {'code': 0}),
+                                (200, {'code': True, 'message': 'Checkin!'}),
+                                (200, {'request_failed': True, 'code': 0, 'message': 'Checkin!'})]:
+            with self.subTest(status=status, payload=payload):
+                post.reset_mock()
+                post.return_value.status_code = status
+                post.return_value.json.return_value = payload
+                result = checkin.GLaDOS(COOKIE).req('POST', '/api/user/checkin')
+                self.assertEqual(result['reason'], 'submission-unknown')
+                post.assert_called_once()
+                self.assertFalse(post.call_args.kwargs['allow_redirects'])
+
+    @mock.patch('checkin.requests.post')
+    def test_known_terminal_message_with_string_code_is_recognized(self, post):
+        post.return_value.status_code = 200
+        for code, message in [('0', 'Checkin!'), ('1', "Today's observation logged.")]:
+            with self.subTest(code=code):
+                post.return_value.json.return_value = {'code': code, 'message': message}
+                result = checkin.GLaDOS(COOKIE).req('POST', '/api/user/checkin')
+                self.assertTrue(checkin.is_normal_checkin_result(result))
+
+    @mock.patch('checkin.attempt_browser_checkin')
+    @mock.patch('checkin.pushplus')
+    def test_unknown_submission_reports_ledger_separately_and_skips_redemption(self, push, browser):
+        today = checkin.beijing_now().date().isoformat()
+        cases = [
+            (True, today, 'system:checkin', '+1', '官网今日已有签到入账'),
+            (True, today, 'compensation', '+1', '未见今日签到入账'),
+            (True, today, 'checkin', '-2', '未见今日签到入账'),
+            (True, '2000-01-01', 'checkin', '+1', '未见今日签到入账'),
+            (False, today, 'checkin', '+1', '流水读取失败'),
+        ]
+        for read_ok, day, label, change, expected in cases:
+            with self.subTest(label=label, day=day, read_ok=read_ok, change=change):
+                client = self.client({'reason': 'submission-unknown', 'request_failed': True})
+                client.get_points.return_value = read_ok
+                client.recent_entries = [{'date': day, 'time': '12:00', 'business': label, 'change': change}] if read_ok else []
+                with mock.patch('checkin.GLaDOS', return_value=client):
+                    self.assertEqual(checkin.main(), 1)
+                client.checkin.assert_called_once_with()
+                client.get_points.assert_called_once_with()
+                client.get_status.assert_not_called()
+                client.exchange.assert_not_called()
+                browser.assert_not_called()
+                title, content = push.call_args.args[1:]
+                self.assertIn('本次运行失败 0/1', title)
+                self.assertIn(expected, content)
+                self.assertIn('跳过兑换', content)
 
     def client(self, result):
         client = checkin.GLaDOS(COOKIE)
