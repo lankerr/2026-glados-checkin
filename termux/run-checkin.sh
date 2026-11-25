@@ -6,6 +6,9 @@ set -uo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 ENGINE="$HERE/../checkin.py"
 ENV_FILE="${GLADOS_TERMUX_ENV:-${GLADOS_TERMUX_CONFIG:-$HOME/.config/glados-termux}/env}"
+if [ "$ENV_FILE" != "$HOME/.config/glados-termux/env" ]; then
+    printf '本次手动运行使用自定义配置：%s\n' "$ENV_FILE"
+fi
 
 if [ ! -f "$ENV_FILE" ]; then
     echo "未找到配置 $ENV_FILE，请先运行 termux/bootstrap.sh" >&2

@@ -127,6 +127,7 @@ class EngineImportTests(unittest.TestCase):
             proc = subprocess.run(["bash", str(REPO_ROOT / "termux/run-checkin.sh")],
                                   env=env, capture_output=True, encoding="utf-8", timeout=10)
             self.assertEqual(proc.returncode, 2)
+            self.assertIn(str(config), proc.stdout)
             self.assertIn("加载配置失败", proc.stderr)
             self.assertFalse((root / "wrong-account").exists())
 
