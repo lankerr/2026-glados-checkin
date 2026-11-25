@@ -154,12 +154,18 @@ def _try_domains(context, cookie_header, expected_email, marker, domains=None):
         with page.expect_response(lambda r: _is_checkin(r.url, r.request.method, base),
                                   timeout=RESULT_WAIT_SECONDS * 1000) as info:
             btn.click()
-        result = info.value.json()
+        response = info.value
+        if not state['submitted'] or not 200 <= response.status < 300:
+            return _failure('browser-outcome-unknown')
+        result = response.json()
         if not isinstance(result, dict) or type(result.get('code')) is not int:
             return _failure('browser-outcome-unknown')
-        # Received a structured server decision. No repeat in this call anyway.
-        if state['submitted']:
-            marker.unlink()
+        from checkin import is_non_retryable_checkin_result, is_normal_checkin_result, is_turnstile_checkin_result
+        if is_non_retryable_checkin_result(result) or is_turnstile_checkin_result(result):
+            return result  # Preserve the rejection details and keep the marker for reconciliation.
+        if result['code'] not in (0, 1) or not is_normal_checkin_result(result):
+            return _failure('browser-outcome-unknown')
+        marker.unlink()
         return result
     except Exception:
         # Even a click exception may occur after submission. Do not retry.

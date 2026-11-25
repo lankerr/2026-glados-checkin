@@ -17,6 +17,7 @@ class FakePage:
         self.url = b.DOMAINS[0] + b.CHECKIN_PAGE_PATH
         self.first = self
         self.posts = 0
+        self.response_status = 200
     def goto(self, *args, **kw): pass
     def get_by_role(self, *args, **kw): return self
     def wait_for(self, **kw): pass
@@ -29,7 +30,8 @@ class FakePage:
             self.ctx.guard(route)
             self.posts += route.continue_.call_count
     def expect_response(self, *args, **kw): return self
-    def __enter__(self): return SimpleNamespace(value=SimpleNamespace(json=lambda: self.outcome))
+    def __enter__(self):
+        return SimpleNamespace(value=SimpleNamespace(status=self.response_status, json=lambda: self.outcome))
     def __exit__(self, *args):
         if self.outcome == 'timeout': raise TimeoutError()
 
@@ -68,6 +70,23 @@ class SafetyTests(unittest.TestCase):
         self.assertEqual(b._try_domains(c,COOKIE,EMAIL,self.marker)['code'],0)
         self.assertEqual(c.page.posts,1)
         self.assertFalse(self.marker.exists())
+
+    def test_unconfirmed_server_response_preserves_marker(self):
+        for status, body in [(503, {'code': 0}), (200, {'code': 42}),
+                             (200, {'code': 1, 'message': 'Unknown outcome'})]:
+            with self.subTest(status=status, body=body):
+                context = FakeContext(body)
+                context.page.response_status = status
+                result = b._try_domains(context, COOKIE, EMAIL, self.marker)
+                self.assertEqual(result['reason'], 'browser-outcome-unknown')
+                self.assertTrue(self.marker.is_file())
+                self.marker.unlink()
+
+    def test_explicit_denial_is_reported_without_unlocking_account(self):
+        rejected = {'code': 5, 'reason': 'turnstile'}
+        result = b._try_domains(FakeContext(rejected), COOKIE, EMAIL, self.marker)
+        self.assertEqual(result, rejected)
+        self.assertTrue(self.marker.is_file())
     def test_mismatched_identity_no_click(self):
         c=FakeContext({'code':0},'other@example.invalid')
         self.assertEqual(b._try_domains(c,COOKIE,EMAIL,self.marker)['reason'],'browser-identity-unverified')
@@ -84,6 +103,7 @@ class SafetyTests(unittest.TestCase):
             with b._exclusive_guard(EMAIL):
                 with self.assertRaises(FileExistsError):
                     with b._exclusive_guard(EMAIL): pass
+                self.assertTrue((Path(self.tmp.name) / 'browser.lock').is_file())
             with b._exclusive_guard(EMAIL): pass
     def test_unresolved_blocks_before_launch(self):
         with patch.object(b,'profile_dir',return_value=self.tmp.name):
