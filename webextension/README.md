@@ -8,14 +8,16 @@
 
 ## 安装
 
-可从 **[Releases v2026.11.24](https://github.com/lankerr/2026-glados-checkin/releases/tag/v2026.11.24)** 直接下载打包好的浏览器压缩包，或按文末命令从源码构建：
+可从 **[Releases v2026.11.26](https://github.com/lankerr/2026-glados-checkin/releases/tag/v2026.11.26)** 直接下载打包好的浏览器压缩包，或按文末命令从源码构建：
 
 | 浏览器 | 安装包 | 安装入口 |
 | --- | --- | --- |
-| Chrome / Edge | `glados-desk-chromium-0.2.1.zip` | 解压，在 `chrome://extensions` 或 `edge://extensions` 开启开发者模式，选择「加载已解压的扩展程序」，选含 `manifest.json` 的文件夹 |
-| Firefox 140 及以上 | `glados-desk-firefox-0.2.1.zip` | 解压，打开 `about:debugging#/runtime/this-firefox`，点「临时载入附加组件」，选择 `manifest.json`。此包未签名，重启后需再次载入 |
+| Chrome / Edge | `glados-desk-chromium-0.2.2.zip` | 解压，在 `chrome://extensions` 或 `edge://extensions` 开启开发者模式，选择「加载已解压的扩展程序」，选含 `manifest.json` 的文件夹 |
+| Firefox 140 及以上 | `glados-desk-firefox-0.2.2.zip` | 解压，打开 `about:debugging#/runtime/this-firefox`，点「临时载入附加组件」，选择 `manifest.json`。此包未签名，重启后需再次载入 |
 
 安装后点击工具栏里的扩展图标，可打开完整工作台。源代码使用项目现有图标，两个浏览器包共用页面和读取逻辑。
+
+**从 0.2.1 升级。** 0.2.2 修复了官网返回字符串 `"0"` 时有效流水被判为读取失败的问题。Chrome / Edge 可将新版解压覆盖到原来加载扩展的文件夹，再到扩展管理页点「重新加载」，确认版本为 0.2.2。Firefox 重新临时载入新版的 `manifest.json`。[问题反馈 #58](https://github.com/lankerr/2026-glados-checkin/issues/58) · [修复 #60](https://github.com/lankerr/2026-glados-checkin/pull/60)
 
 ## 第一次使用
 

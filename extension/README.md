@@ -1,11 +1,11 @@
 # 旧版浏览器插件（v0.1.x）停用与迁移说明
 
 > [!IMPORTANT]
-> 旧版自动点击浏览器插件（`v0.1.0` / `v0.1.1`）已停用，由 **[GLaDOS 签到工作台 0.2.1](../webextension/README.md)** 正式替代。如浏览器中仍安装有旧版 `0.1.x` 扩展，请在扩展管理页将其移除后再安装工作台 `0.2.1`。
+> 旧版自动点击浏览器插件（`v0.1.0` / `v0.1.1`）已停用，由 **[GLaDOS 签到工作台 0.2.2](../webextension/README.md)** 正式替代。如浏览器中仍安装有旧版 `0.1.x` 扩展，请在扩展管理页将其移除后再安装工作台 `0.2.2`。
 
-## 立即迁移到签到工作台 0.2.1
+## 立即迁移到签到工作台 0.2.2
 
-- **一键下载安装包（无需命令行）：** 前往 **[Releases v2026.11.24](https://github.com/lankerr/2026-glados-checkin/releases/tag/v2026.11.24)** 下载 `glados-desk-chromium-0.2.1.zip`（Chrome / Edge）或 `glados-desk-firefox-0.2.1.zip`（Firefox 140+）
+- **一键下载安装包（无需命令行）：** 前往 **[Releases v2026.11.26](https://github.com/lankerr/2026-glados-checkin/releases/tag/v2026.11.26)** 下载 `glados-desk-chromium-0.2.2.zip`（Chrome / Edge）或 `glados-desk-firefox-0.2.2.zip`（Firefox 140+）
 - **安装与权限说明：** [webextension/README.md](../webextension/README.md)
 - **九步截图安装与流水核对教程：** [docs/desk-walkthrough.md](../docs/desk-walkthrough.md)
 

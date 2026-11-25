@@ -44,28 +44,32 @@
 <a id="quick-start"></a>
 ## 快速开始
 
-> [!IMPORTANT]
-> 完整签到模式默认启用 `EXCHANGE_PLAN=plan500` 积分自动兑换。不希望兑换时先设 `off`；只读模式不会兑换。
+### 桌面用户默认使用签到工作台
+
+1. 下载 **[工作台 0.2.2](https://github.com/lankerr/2026-glados-checkin/releases/tag/v2026.11.26)**。Chrome / Edge 选文件名带 `chromium` 的 ZIP，Firefox 140 及以上选 `firefox`。解压到固定文件夹。
+2. Chrome / Edge 打开扩展管理页，启用「开发者模式」，选「加载已解压的扩展程序」，选中含 `manifest.json` 的文件夹。Firefox 打开 `about:debugging#/runtime/this-firefox`，选「临时载入附加组件」并打开 `manifest.json`；重启后需重新载入。[分步截图](docs/desk-walkthrough.md)
+3. 在工作台选已登录的域名，点 **去官网签到**，在官网确认账号并完成页面要求的验证。回工作台点 **核对官网流水**，看到「官网已有签到入账」即可。今天已签过的，直接核对即可。工作台复用浏览器登录状态，无需复制 Cookie。
 
 ### 选择你的使用方式
 
-[签到方案和逐项致谢](docs/checkin-options.md)汇总了现有工具、签到工作台 0.2.1 的安装方法和社区方案进展。
-
-[工作台图解与 NAS 容器实验](docs/desk-walkthrough.md)包含安装截图、积分流水对照和可在 Docker 复跑的只读示例。
+[签到方案与逐项致谢](docs/checkin-options.md)列出了各平台入口和社区提案进展。
 
 | 你想做什么 | 推荐入口 | 会发生什么 |
 | --- | --- | --- |
-| 在自己的电脑尝试签到 | [本地运行](#local) | 接口签到；遇到特定验证拒绝时尝试本地浏览器通道 |
+| 已部署本地脚本，想核对运行配置 | [本地脚本](#local) | 完整模式含积分兑换选项，查看配置后再运行 |
 | 不开电脑，只核对状态 | [GitHub Actions](#actions) | 定时读取积分、剩余天数并推送，不代表完成签到 |
 | 先确认 Cookie 是否有效 | [只读诊断](#diagnostics) | 只查询状态，不签到、不兑换、不推送 |
 | 在安卓手机核对今天有没有入账 | [Termux 流水核对](docs/android-ledger.md) | 查询今天带签到标签的正积分，通知栏和终端都能看结果 |
 | 用 NixOS 管理签到任务和凭据 | [systemd 服务配置](docs/usage.md#nixos) | 服务启动时从指定文件读取 Cookie，可选用自己的软件包 |
-| 浏览器工作台（推荐） | [签到工作台 0.2.1](webextension/README.md) | 可选每日提醒 → 一键开官网由本人完成签到/验证 → 5 域名精准核对今日流水（Chrome / Edge / Firefox） |
+| 想在 NAS 先试 Docker | [Docker / Compose 示例](docs/desk-walkthrough.md#container) | 用模拟流水验收容器和日志 |
 
 > Actions 定时默认**只读核对**，不是云端首次签到；本地成功记录不代表普遍或长期保证。[查看运行边界](#status)
 
 <a id="local"></a>
 ### 1. 本地运行
+
+> [!IMPORTANT]
+> 本节的完整签到模式默认启用 `EXCHANGE_PLAN=plan500` 积分自动兑换。不希望兑换时先设 `off`。
 
 需要 Python 和可用的 Chrome / Edge。先下载仓库，在自己的电脑中安装依赖：
 
