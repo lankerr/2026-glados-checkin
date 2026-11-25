@@ -82,6 +82,8 @@ in
         ExecStart = "${self.packages.${pkgs.system}.default}/bin/glados-checkin";
         LoadCredential = [ ]; # Can be used for secrets later if needed
         DynamicUser = true;
+        StateDirectory = "glados-checkin";
+        WorkingDirectory = "%S/glados-checkin";
       };
     };
 
