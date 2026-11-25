@@ -17,8 +17,8 @@ async function readOfficialLedger(expectedOrigin) {
   async function identity() {
     const result = await json('/api/user/status');
     const email = result?.data?.email;
-    if (result?.code === 1 || result?.code === 403) throw new Error('login');
-    if ((result?.code !== undefined && result.code !== 0) || typeof email !== 'string' || !email.includes('@')) throw new Error('identity');
+    if ([1, '1', 403, '403'].includes(result?.code)) throw new Error('login');
+    if (![undefined, 0, '0'].includes(result?.code) || typeof email !== 'string' || !email.includes('@')) throw new Error('identity');
     return email.trim().toLowerCase();
   }
   try {
