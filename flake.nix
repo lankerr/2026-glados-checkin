@@ -51,5 +51,6 @@
       );
 
       nixosModules.default = import ./glados-checkin.nix self;
+      homeManagerModules.default = import ./home-manager.nix self;
     };
 }

@@ -19,10 +19,10 @@ in
       type = types.package;
       default =
         if cfg.browserEngine == "playwright" then
-          self.packages.${pkgs.system}.withPlaywright
+          self.packages.${pkgs.stdenv.hostPlatform.system}.withPlaywright
         else
-          self.packages.${pkgs.system}.default;
-      defaultText = literalExpression "self.packages.\${pkgs.system}.default (or withPlaywright if browserEngine == \"playwright\")";
+          self.packages.${pkgs.stdenv.hostPlatform.system}.default;
+      defaultText = literalExpression "self.packages.\${pkgs.stdenv.hostPlatform.system}.default (or withPlaywright if browserEngine == \"playwright\")";
       description = "The glados-checkin package to use.";
     };
 
@@ -80,10 +80,16 @@ in
       description = "Optional browser package (e.g. pkgs.microsoft-edge) to provide in PATH for Turnstile verification fallback.";
     };
 
+    browserHeadless = mkOption {
+      type = types.nullOr types.bool;
+      default = null;
+      description = "Whether to run the browser fallback in headless mode (true -> '1', false -> '0', null -> auto-detect from DISPLAY/WAYLAND_DISPLAY).";
+    };
+
     cdpUrl = mkOption {
       type = types.nullOr types.str;
       default = null;
-      description = "Custom CDP (Chrome DevTools Protocol) endpoint URL (e.g. http://127.0.0.1:9222 or ws://...).";
+      description = "Custom local loopback CDP (Chrome DevTools Protocol) endpoint URL (e.g. http://127.0.0.1:9222 or ws://127.0.0.1:9222/devtools/browser).";
     };
   };
 
@@ -99,6 +105,9 @@ in
         PUSH_LEVEL = cfg.pushLevel;
         GLADOS_BROWSER_ENGINE = cfg.browserEngine;
       }
+      // (optionalAttrs (cfg.browserHeadless != null) {
+        GLADOS_BROWSER_HEADLESS = if cfg.browserHeadless then "1" else "0";
+      })
       // (optionalAttrs (cfg.browserEngine == "playwright") {
         PLAYWRIGHT_BROWSERS_PATH = "${pkgs.playwright-driver.browsers}";
         PLAYWRIGHT_SKIP_VALIDATE_HOST_REQUIREMENTS = "true";
