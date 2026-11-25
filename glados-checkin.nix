@@ -15,8 +15,21 @@ in
   options.services.glados-checkin = {
     enable = mkEnableOption "GLaDOS Automatic Check-in Service";
 
+    package = mkOption {
+      type = types.package;
+      default = self.packages.${pkgs.stdenv.hostPlatform.system}.default;
+      description = "Package providing bin/glados-checkin.";
+    };
+
+    environmentFile = mkOption {
+      type = types.nullOr (types.strMatching "/.+");
+      default = null;
+      description = "Absolute path to a runtime systemd EnvironmentFile containing GLADOS_COOKIE and optional notification settings.";
+    };
+
     cookie = mkOption {
-      type = types.str;
+      type = types.nullOr types.str;
+      default = null;
       description = "GLaDOS Cookie (or multiple cookies separated by && or newline). Keep it secret.";
     };
 
@@ -55,15 +68,19 @@ in
   };
 
   config = mkIf cfg.enable {
+    assertions = [{
+      assertion = cfg.cookie != null || cfg.environmentFile != null;
+      message = "Set services.glados-checkin.environmentFile or services.glados-checkin.cookie.";
+    }];
     systemd.services.glados-checkin = {
       description = "GLaDOS Automatic Check-in";
       wants = [ "network-online.target" ];
       after = [ "network-online.target" ];
 
       environment = {
-        GLADOS_COOKIE = cfg.cookie;
         PUSH_LEVEL = cfg.pushLevel;
       }
+      // (optionalAttrs (cfg.cookie != null) { GLADOS_COOKIE = cfg.cookie; })
       // (optionalAttrs (cfg.telegramBotToken != null) {
         TELEGRAM_BOT_TOKEN = cfg.telegramBotToken;
       })
@@ -79,12 +96,11 @@ in
 
       serviceConfig = {
         Type = "oneshot";
-        ExecStart = "${self.packages.${pkgs.system}.default}/bin/glados-checkin";
-        LoadCredential = [ ]; # Can be used for secrets later if needed
+        ExecStart = "${cfg.package}/bin/glados-checkin";
         DynamicUser = true;
         StateDirectory = "glados-checkin";
         WorkingDirectory = "%S/glados-checkin";
-      };
+      } // optionalAttrs (cfg.environmentFile != null) { EnvironmentFile = cfg.environmentFile; };
     };
 
     systemd.timers.glados-checkin = {

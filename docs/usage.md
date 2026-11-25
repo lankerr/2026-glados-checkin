@@ -448,9 +448,10 @@ python3 checkin.py
 ---
 
 <a id="nixos"></a>
+<a id="nixos"></a>
 ## ❄️ NixOS 服务配置
 
-本项目提供 Nix Flake。**当前模块将 Cookie/推送凭据写入生成的服务环境，可能进入可读的 Nix store；不要直接将真实秘密填入下方演示配置。**本节保留接口参考，不表示已实现安全凭据注入或真实浏览器验收。
+把 Cookie 和推送凭据放在主机上的私有文件中，由 systemd 在服务启动时读取。Nix 配置只需填写该文件的绝对路径字符串。旧版 `cookie` 和推送凭据选项仍可用，但直接填写的值可能进入本机可读的 Nix store。
 
 ### 使用方法 (Flakes)
 
@@ -474,14 +475,8 @@ python3 checkin.py
           # 配置服务
           services.glados-checkin = {
             enable = true;
-            cookie = "gld:sess=xxx; gld:sess.sig=yyy";
-
-            # 【可选】消息推送配置
+            environmentFile = "/run/secrets/glados.env";
             pushLevel = "all"; # 或 "fail_only"
-            pushplusToken = "xxx";
-            serverchanSendkey = "SCT...";
-            telegramBotToken = "yyy";
-            telegramChatId = "zzz";
           };
         })
       ];
@@ -490,7 +485,9 @@ python3 checkin.py
 }
 ```
 
-部署配置后执行 `sudo nixos-rebuild switch --flake .#my-server`，签到任务即会自动注册为 systemd timers。
+在部署系统上准备 `/run/secrets/glados.env`，设为 root 所有、权限 `0600`。每行填一项，如 `GLADOS_COOKIE="你的 Cookie"` 和 `EXCHANGE_PLAN=off`。这个目录通常在重启后清空，请让你的凭据管理器在服务启动前重新提供文件。可选的 `package` 接受提供 `bin/glados-checkin` 的 Nix 软件包。
+
+执行 `sudo nixos-rebuild switch --flake .#my-server` 后，用 `systemctl list-timers glados-checkin.timer` 核对下次运行时间。感谢 @Initsnow 提供模块、软件包覆盖和环境文件方案。[PR #47](https://github.com/lankerr/2026-glados-checkin/pull/47)
 
 ---
 

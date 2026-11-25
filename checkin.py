@@ -328,6 +328,23 @@ def is_missing_api_response(result):
     return not isinstance(result, dict) or result.get('request_failed') is True
 
 
+CHECKIN_LEDGER_LABELS = {'system:checkin', 'checkin', 'check-in', 'check_in'}
+
+
+def is_credited_checkin(entry):
+    amount = parse_finite_number(entry.get('change'))
+    return entry.get('business') in CHECKIN_LEDGER_LABELS and amount is not None and amount > 0
+
+
+def reconcile_unknown_submission(client):
+    if not client.get_points():
+        return '积分流水读取失败，请在官网核对今日入账'
+    today = beijing_now().date().isoformat()
+    if any(row.get('date') == today and is_credited_checkin(row) for row in client.recent_entries):
+        return '官网今日已有签到入账，本次请求结果仍待确认'
+    return '最近可见流水中未见今日签到入账，请在官网核对'
+
+
 def summarize_checkin_failure(result):
     """Describe failures using fixed labels and allowlisted, non-secret metadata."""
     if not isinstance(result, dict):
@@ -335,7 +352,11 @@ def summarize_checkin_failure(result):
 
     reason = str(result.get('reason', '')).strip().lower()
     message = str(result.get('message', '')).strip().lower()
-    if reason == 'checkin-challenge-unavailable':
+    if reason == 'submission-unknown':
+        label = '签到已尝试提交，结果待核对；本轮停止重复提交'
+        if result.get('invalid_response'):
+            label += '（响应格式异常）'
+    elif reason == 'checkin-challenge-unavailable':
         label = '未获取有效签到验证，本次未提交签到，请稍后重试'
     elif reason == 'checkin-challenge-expired':
         label = '签到验证已过期，本次未提交签到，请稍后重试'
@@ -393,6 +414,8 @@ def is_normal_checkin_result(result):
         return False
 
     message = str(result.get('message', '')).strip().lower()
+    if message == 'checkin!' and str(result.get('code')) in ('0', '1'):
+        return True
     if any(marker in message for marker in NORMAL_CHECKIN_MESSAGES):
         return True
 
@@ -514,6 +537,9 @@ def checkin_with_retry(client, attempts=3, delay_seconds=60):
 
     for attempt in range(1, attempts + 1):
         last_result = client.checkin()
+        if isinstance(last_result, dict) and last_result.get('reason') == 'submission-unknown':
+            log('签到提交结果待核对，本轮停止重发并改查积分流水')
+            return last_result, False
         if is_normal_checkin_result(last_result):
             return last_result, True
 
@@ -603,8 +629,12 @@ class GLaDOS:
         # Validate local configuration before the retry loop or any network request.
         browser_headers = get_browser_headers()
         # Keep only fixed, non-secret failure metadata after all domains fail.
-        failure = {'request_failed': True, 'reason': 'request-failed'}
-        for d in DOMAINS if domains is None else domains:
+        submission = method == 'POST' and path == '/api/user/checkin'
+        failure = {'request_failed': True, 'reason': 'submission-unknown' if submission else 'request-failed'}
+        targets = DOMAINS if domains is None else domains
+        if submission:
+            targets = tuple(targets)[:1]
+        for d in targets:
             try:
                 url = f"{d}{path}"
                 h = HEADERS.copy()
@@ -617,15 +647,24 @@ class GLaDOS:
                     # 表单提交交给 requests 自动设置 Content-Type，
                     # 手动预设 JSON 头会被兑换接口拒绝。
                     h.pop('Content-Type', None)
-                    resp = requests.post(url, headers=h, data=data, timeout=10)
+                    resp = requests.post(url, headers=h, data=data, timeout=10, allow_redirects=not submission)
                 elif method == 'GET':
                     resp = requests.get(url, headers=h, timeout=10)
                 else:
-                    resp = requests.post(url, headers=h, json=data, timeout=10)
+                    resp = requests.post(url, headers=h, json=data, timeout=10, allow_redirects=not submission)
 
                 if resp.status_code == 200:
                     payload = resp.json()
                     if isinstance(payload, dict):
+                        if submission and is_missing_api_response(payload):
+                            return failure
+                        if submission and not (is_turnstile_checkin_result(payload) or is_non_retryable_checkin_result(payload)):
+                            code = payload.get('code')
+                            message = str(payload.get('message', '')).strip().lower()
+                            valid_code = type(code) in (int, str) and code in (0, 1, '0', '1')
+                            known_message = message == 'checkin!' or message.startswith(NORMAL_CHECKIN_MESSAGES)
+                            if not (valid_code and known_message):
+                                return failure
                         self.domain = d # Remember working domain
                         return payload
                     failure['invalid_response'] = True
@@ -1154,7 +1193,11 @@ def main():
         gain_summary = '未确认（最终请求未成功；本轮是否入账未知，请核对完整流水）'
         if is_non_retryable_checkin_result(res):
             # Stop all follow-up requests for this account after an explicit denial.
+            gain_summary = '未获取（认证被拒绝，今日签到状态未知）'
             g.exchange_result = '⏭️ 认证被拒绝，跳过兑换'
+        elif isinstance(res, dict) and res.get('reason') == 'submission-unknown':
+            gain_summary = reconcile_unknown_submission(g)
+            g.exchange_result = '⏭️ 提交结果待核对，跳过兑换'
         elif is_missing_api_response(res):
             # Do not add more reads or attempt redemption during a transport outage.
             g.exchange_result = '⏭️ 本次请求失败，跳过积分查询和兑换'
@@ -1214,7 +1257,7 @@ def main():
         title = f"GLaDOS签到: {outcome} {success_cnt}/{len(cookies)}"
         content = "".join(results)
         if success_cnt < len(cookies):
-            content += '<p>以上仅反映本次运行。失败账号的今日签到状态未知，请结合当天其他成功运行或官网签到日历核对。</p>'
+            content += '<p>成功数只统计本次提交结果。请查看各账号的入账核验，或在官网签到日历核对今天的记录。</p>'
         content += f"<br><small>时间（北京时间 UTC+8）: {beijing_time()}</small>"
         
         if ptoken:
