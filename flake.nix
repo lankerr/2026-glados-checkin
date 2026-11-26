@@ -25,7 +25,7 @@
           pythonEnv = pkgs.python3.withPackages (ps: [ ps.requests ]);
         in
         {
-          default = pkgs.stdenv.mkDerivation {
+          default = pkgs.stdenvNoCC.mkDerivation {
             pname = "glados-checkin";
             version = "1.1.0";
             src = ./.;
