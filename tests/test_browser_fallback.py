@@ -37,79 +37,31 @@ class BrowserFallbackTests(OfflineTestCase):
         client.checkin = mock.Mock(return_value=api_result)
         return client
 
-    def test_turnstile_triggers_browser_fallback_success(self):
-        client = self.make_client(TURNSTILE)
-        with mock.patch.dict(os.environ, dict(PLAIN_ENV)), \
-                mock.patch('browser_checkin.browser_checkin', return_value=dict(OK)) as bc, \
-                mock.patch('checkin.log'):
-            result, success = checkin.checkin_with_retry(client, 3, 0)
-        self.assertTrue(success)
-        self.assertEqual(result, OK)
-        bc.assert_called_once()
-        # Cookie 与 UA 一并传入浏览器，保证设备一致性校验通过
-        self.assertEqual(bc.call_args.args[0], COOKIE)
-        self.assertIn('SyntheticBrowser', bc.call_args.args[1])
+    def test_verification_waits_for_person_and_never_retries(self):
+        for env in ({}, {'GLADOS_BROWSER_CHECKIN': '1'},
+                    {'GLADOS_MANUAL_BROWSER': '1', 'GITHUB_ACTIONS': 'true'}):
+            with self.subTest(env=env), mock.patch.dict(os.environ, env, clear=True), \
+                    mock.patch('browser_checkin.browser_checkin') as browser:
+                client = self.make_client(TURNSTILE)
+                result, ok = checkin.checkin_with_retry(client, 3, 0)
+                self.assertFalse(ok)
+                self.assertEqual(result, TURNSTILE)
+                client.checkin.assert_called_once()
+                browser.assert_not_called()
 
-    def test_turnstile_browser_fallback_still_turnstile_reports_failure(self):
-        client = self.make_client(TURNSTILE)
-        with mock.patch.dict(os.environ, dict(PLAIN_ENV)), \
-                mock.patch('browser_checkin.browser_checkin', return_value=dict(TURNSTILE)), \
-                mock.patch('checkin.time.sleep'), \
-                mock.patch('checkin.log'):
-            result, success = checkin.checkin_with_retry(client, 3, 0)
-        self.assertFalse(success)
-        self.assertEqual(result.get('reason'), 'turnstile')
-
-    def test_browser_exception_is_contained_as_failure(self):
-        client = self.make_client(TURNSTILE)
-        with mock.patch.dict(os.environ, dict(PLAIN_ENV)), \
-                mock.patch('browser_checkin.browser_checkin',
-                           side_effect=RuntimeError('boom')), \
-                mock.patch('checkin.time.sleep'), \
-                mock.patch('checkin.log'):
-            result, success = checkin.checkin_with_retry(client, 3, 0)
-        self.assertFalse(success)
-        self.assertTrue(result.get('request_failed'))
-
-    def test_env_disable_keeps_legacy_stop_behavior(self):
-        client = self.make_client(TURNSTILE)
-        with mock.patch.dict(os.environ, dict(PLAIN_ENV, GLADOS_BROWSER_CHECKIN='0')), \
-                mock.patch('browser_checkin.browser_checkin') as bc, \
-                mock.patch('checkin.log'):
-            result, success = checkin.checkin_with_retry(client, 3, 0)
-        self.assertFalse(success)
-        self.assertEqual(result, TURNSTILE)
-        bc.assert_not_called()
-        client.checkin.assert_called_once()
-
-    def test_normal_api_checkin_never_touches_browser(self):
-        client = self.make_client(dict(OK))
-        with mock.patch.dict(os.environ, dict(PLAIN_ENV)), \
-                mock.patch('browser_checkin.browser_checkin') as bc, \
-                mock.patch('checkin.log'):
-            result, success = checkin.checkin_with_retry(client, 3, 0)
-        self.assertTrue(success)
-        bc.assert_not_called()
-
-    def test_github_actions_disables_browser_fallback_by_default(self):
-        client = self.make_client(TURNSTILE)
-        with mock.patch.dict(os.environ, dict(PLAIN_ENV, GITHUB_ACTIONS='true', GLADOS_BROWSER_CHECKIN='')), \
-                mock.patch('browser_checkin.browser_checkin') as bc, \
-                mock.patch('checkin.log'):
-            result, success = checkin.checkin_with_retry(client, 3, 0)
-        self.assertFalse(success)
-        self.assertEqual(result, TURNSTILE)
-        bc.assert_not_called()
-
-    def test_github_actions_explicit_opt_in_still_uses_browser(self):
-        client = self.make_client(TURNSTILE)
-        with mock.patch.dict(os.environ, dict(
-            PLAIN_ENV, GITHUB_ACTIONS='true', GLADOS_BROWSER_CHECKIN='1')), \
-                mock.patch('browser_checkin.browser_checkin', return_value=dict(OK)) as bc, \
-                mock.patch('checkin.log'):
-            result, success = checkin.checkin_with_retry(client, 3, 0)
-        self.assertTrue(success)
-        bc.assert_called_once()
+    @mock.patch.dict(os.environ, {'GLADOS_MANUAL_BROWSER':'1'}, clear=True)
+    def test_explicit_foreground_handoff_only_once(self):
+        for status, reason in ((False, 'browser-identity-unverified'), (True, 'submission-unknown')):
+            with self.subTest(status=status), mock.patch('browser_checkin.browser_checkin',
+                    return_value={'request_failed':True, 'reason':'submission-unknown'}) as browser:
+                client = self.make_client(TURNSTILE)
+                client.get_status = mock.Mock(return_value=status)
+                client.email = 'alice@example.invalid'
+                result, ok = checkin.checkin_with_retry(client, 3, 0)
+                self.assertFalse(ok)
+                self.assertEqual(result['reason'], reason)
+                self.assertEqual(browser.call_count, int(status))
+                client.checkin.assert_called_once()
 
 
 class CookieInjectionTests(unittest.TestCase):

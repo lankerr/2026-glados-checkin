@@ -1,0 +1,28 @@
+name: Nix deployment
+on:
+  pull_request:
+    paths:
+      - '**.nix'
+      - 'flake.lock'
+      - 'checkin.py'
+      - 'update_streak.py'
+      - '.gitattributes'
+      - '.github/workflows/nix.yml'
+permissions:
+  contents: read
+jobs:
+  deploy-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+      - name: Evaluate timers and execute the packaged ledger without credentials
+        run: |
+          docker run --rm --mount "type=bind,source=$PWD,target=/src,readonly" -w /src nixos/nix:2.28.5 sh -ec '
+            nix --extra-experimental-features "nix-command flakes" eval --impure --json --file docs/examples/check-timer.nix
+            out=$(nix --extra-experimental-features "nix-command flakes" build --no-link --print-out-paths path:/src)
+            test -x "$out/bin/glados-checkin"
+            "$out/bin/glados-ledger" --help
+            rc=0; "$out/bin/glados-ledger" || rc=$?
+            test "$rc" = 1
+          '

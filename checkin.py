@@ -356,6 +356,16 @@ def summarize_checkin_failure(result):
         label = '签到已尝试提交，结果待核对；本轮停止重复提交'
         if result.get('invalid_response'):
             label += '（响应格式异常）'
+    elif reason == 'browser-outcome-unresolved':
+        label = '此前浏览器提交待核对；请在官网确认该账号流水后处理本机标记'
+    elif reason == 'browser-state-unavailable':
+        label = '无法记录浏览器提交状态，已拦截提交；请检查本机状态目录'
+    elif reason == 'browser-busy':
+        label = '本机浏览器任务已锁定；请先确认是否有任务正在运行'
+    elif reason in ('browser-cookie-ambiguous', 'browser-identity-unverified'):
+        label = '无法确认浏览器账号，本次未提交；请在官网确认登录账号'
+    elif reason in ('browser-manual-incomplete', 'browser-checkin-unavailable'):
+        label = '未观察到人工签到，请在官网核对流水'
     elif reason == 'checkin-challenge-unavailable':
         label = '未获取有效签到验证，本次未提交签到，请稍后重试'
     elif reason == 'checkin-challenge-expired':
@@ -489,45 +499,19 @@ def summarize_current_run_gain(result, is_success, client):
     return claim + '；已读取流水中未识别到今日正变动（不等于没有入账，记录可能缺失或延迟）'
 
 
-def attempt_browser_checkin(client, max_attempts=2):
-    """Turnstile 兜底：真浏览器打开官方签到页完成验证并签到。
-
-    返回浏览器签到结果 dict；返回 None 表示兜底被禁用或环境不可用。
-    任何异常都不应中断主流程，最终失败按 turnstile 原语义处理。
-    """
-    if os.environ.get('GLADOS_BROWSER_CHECKIN', '1').strip().lower() in ('0', 'false', 'no', 'off'):
-        return None
-    # GitHub Actions 是数据中心 IP + 无头临时容器，Turnstile 基本不可能放行，
-    # 默认禁用以免浪费 runner 分钟数；确要尝试可显式设 GLADOS_BROWSER_CHECKIN=1。
-    if (os.environ.get('GITHUB_ACTIONS', '').strip().lower() in ('1', 'true', 'yes')
-            and os.environ.get('GLADOS_BROWSER_CHECKIN', '').strip().lower() not in ('1', 'true', 'yes', 'on')):
-        log("⏭️ 检测到 GitHub Actions 环境：浏览器兜底默认禁用（数据中心 IP 无法可靠通过 Turnstile，请转本地运行）")
+def attempt_browser_checkin(client):
+    """Explicit foreground handoff only; a scheduled task should use the ledger."""
+    enabled = ('1', 'true', 'yes', 'on')
+    if (os.environ.get('GLADOS_MANUAL_BROWSER', '').strip().lower() not in enabled
+            or os.environ.get('GITHUB_ACTIONS', '').strip().lower() in enabled):
         return None
     try:
         from browser_checkin import browser_checkin
-    except ImportError:
-        log("⚠️ playwright 未安装（pip install playwright && playwright install chromium），无法使用浏览器兜底")
-        return None
-    try:
-        ua = get_browser_headers().get('User-Agent')
-    except UserAgentConfigurationError:
-        ua = None
-    if not ua:
-        log("⚠️ 缺少浏览器 User-Agent，跳过浏览器兜底")
-        return None
-    result = None
-    for i in range(1, max(1, max_attempts) + 1):
-        log(f"🔄 浏览器签到兜底第 {i}/{max_attempts} 次（真页面自行完成 Turnstile）…")
-        try:
-            result = browser_checkin(client.cookie, ua)
-        except Exception as e:  # noqa: BLE001 - 兜底通道绝不冒泡异常
-            result = {'request_failed': True, 'reason': 'browser-checkin-error',
-                      'detail': type(e).__name__}
-        if is_normal_checkin_result(result) or is_non_retryable_checkin_result(result):
-            return result
-        if i < max_attempts:
-            time.sleep(8)
-    return result
+        if not client.get_status():
+            return {'request_failed': True, 'reason': 'browser-identity-unverified'}
+        return browser_checkin(client.cookie, client.email)
+    except Exception:
+        return {'request_failed': True, 'reason': 'browser-checkin-unavailable'}
 
 
 def checkin_with_retry(client, attempts=3, delay_seconds=60):
@@ -548,8 +532,7 @@ def checkin_with_retry(client, attempts=3, delay_seconds=60):
             return last_result, False
 
         if is_turnstile_checkin_result(last_result):
-            # 2026-11 起官方签到接口要求 Cloudflare Turnstile 令牌，纯 API 无法取得；
-            # 改用真浏览器打开官方签到页，由页面自身完成验证（见 browser_checkin.py）。
+            # Stop here unless a person explicitly requested a foreground handoff.
             browser_result = attempt_browser_checkin(client)
             if browser_result is None:
                 log(f"❌ 签到需要人机验证，停止自动重试: {summarize_checkin_failure(last_result)}")

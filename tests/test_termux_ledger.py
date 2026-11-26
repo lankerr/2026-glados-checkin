@@ -13,6 +13,14 @@ import update_streak
 
 
 class TermuxLedgerTests(unittest.TestCase):
+    def test_preview_has_no_account_access_and_returns_delivery_status(self):
+        with mock.patch('checkin.get_cookies', side_effect=AssertionError('no account access')), \
+                mock.patch('shutil.which', return_value='notify'), mock.patch('subprocess.run') as run:
+            for code in (0, 1):
+                run.return_value.returncode = code
+                self.assertEqual(update_streak.test_notification(), code)
+                self.assertIn('本机测试消息', run.call_args.args[0][-1])
+
     def test_missing_failed_or_timed_out_notification_keeps_terminal_report(self):
         cases = [(None, None), ('notify', mock.Mock(returncode=1)),
                  ('notify', subprocess.TimeoutExpired('notify', 15))]
