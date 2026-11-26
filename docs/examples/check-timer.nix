@@ -16,11 +16,15 @@ let
     environmentFile = "/run/secrets/glados.env";
     package = pkgs.writeShellScriptBin "glados-checkin" "exit 0";
   });
+  ledger = makeHost (_: { mode = "ledger"; checkinTime = "18:45:00"; environmentFile = "/run/secrets/glados.env"; });
   unconfigured = makeHost (_: {});
   runtimeService = runtimeHost.config.systemd.services.glados-checkin;
   service = host.config.systemd.services.glados-checkin;
   timer = host.config.systemd.timers.glados-checkin.timerConfig;
 in
+assert ledger.config.systemd.services.glados-checkin.serviceConfig.ExecStart == "${ledger.config.services.glados-checkin.package}/bin/glados-ledger";
+assert ledger.config.systemd.timers.glados-checkin.timerConfig.OnCalendar == [ "*-*-* 18:45:00" ];
+assert timer.OnCalendar == [ "*-*-* 09:30:00" ];
 assert service.environment.GLADOS_COOKIE == "demo";
 assert !(service.serviceConfig ? EnvironmentFile);
 assert !(runtimeService.environment ? GLADOS_COOKIE);

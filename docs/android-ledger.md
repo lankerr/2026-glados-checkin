@@ -14,6 +14,8 @@
    python -m pip install requests
    ```
 
+   可先运行 `python update_streak.py --test-notification`。它不需要 Cookie，也不访问官网。若提示命令已接受，请查看通知栏能否看到“GLaDOS 通知测试”；若命令失败，检查 Termux:API、权限和命令来源。命令返回 0 不能证明手机已经显示通知。
+
 3. 在 Termux 的私有目录建立配置文件。
 
    ```sh
@@ -59,3 +61,5 @@ termux-job-scheduler --pending
 安卓决定实际唤醒时间，约每 24 小时读取一次。需要停用时，按实际编号执行 `termux-job-scheduler --cancel --job-id 5402`，再用 `--pending` 核对。两个管理命令的参数已按 [Termux:API 命令源码](https://github.com/termux/termux-api-package/blob/master/scripts/termux-job-scheduler.in)核对。手机定时唤醒和通知送达仍待真机验证。
 
 感谢 @chengchang1987-cloud 提出手机端需求，感谢 @lankerr 将 Termux 配置和本地通知整理成提案。[Issue #40](https://github.com/lankerr/2026-glados-checkin/issues/40) · [PR #54](https://github.com/lankerr/2026-glados-checkin/pull/54)
+
+真机反馈请集中到 [Issue #40](https://github.com/lankerr/2026-glados-checkin/issues/40)：安卓与 Termux 版本、测试通知是否可见、锁屏后是否按计划运行、取消后编号是否消失。无需提供账号或完整日志。

@@ -31,9 +31,11 @@
             src = ./.;
             buildInputs = [ pythonEnv ];
             installPhase = ''
-              mkdir -p $out/bin
+              mkdir -p $out/bin $out/libexec/glados
               cp checkin.py $out/bin/glados-checkin
-              chmod +x $out/bin/glados-checkin
+              cp checkin.py update_streak.py $out/libexec/glados/
+              printf '#!%s\nexec %s/bin/python3 "%s/libexec/glados/update_streak.py" "$@"\n' ${pkgs.runtimeShell} ${pythonEnv} "$out" > $out/bin/glados-ledger
+              chmod +x $out/bin/glados-{checkin,ledger}
               sed -i "1s|.*|#!${pythonEnv}/bin/python3|" $out/bin/glados-checkin
             '';
           };

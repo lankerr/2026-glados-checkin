@@ -54,16 +54,26 @@ def notify_termux(confirmed, total, failed):
     body = (f'今日已确认签到入账 {confirmed}/{total} 个账号。' if total else '请检查本机配置。')
     if total and confirmed < total:
         body += '其余账号请打开官网核对。'
+    if not send_local_notification(title, body):
+        print(f'本地通知命令未成功。{title}。{body}')
+
+
+def send_local_notification(title, body):
     binary = shutil.which('termux-notification')
     if binary:
         try:
             result = subprocess.run([binary, '--title', title, '--content', body],
                                     timeout=15, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            if result.returncode == 0:
-                return
+            return result.returncode == 0
         except (OSError, subprocess.TimeoutExpired):
             pass
-    print(f'本地通知命令未成功。{title}。{body}')
+    return False
+
+
+def test_notification():
+    ok = send_local_notification('GLaDOS 通知测试', '这是本机测试消息，未查询账号或执行签到。')
+    print('通知命令已接受；请查看手机通知栏。' if ok else '通知命令未成功，请检查 Termux:API 和通知权限。')
+    return 0 if ok else 1
 
 
 def main(*, termux_notify=False):
@@ -107,5 +117,8 @@ def main(*, termux_notify=False):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--termux-notify', action='store_true', help='在安卓 Termux 通知栏显示入账账号数')
-    sys.exit(main(termux_notify=parser.parse_args().termux_notify))
+    modes = parser.add_mutually_exclusive_group()
+    modes.add_argument('--test-notification', action='store_true', help='仅测试本地通知，无需账号')
+    modes.add_argument('--termux-notify', action='store_true', help='在安卓 Termux 通知栏显示入账账号数')
+    args = parser.parse_args()
+    sys.exit(test_notification() if args.test_notification else main(termux_notify=args.termux_notify))

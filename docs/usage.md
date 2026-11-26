@@ -29,10 +29,17 @@
 | `TELEGRAM_CHAT_ID`   | ❌ 否 | 接收推送的 Telegram Chat ID                                                |
 | `PUSH_LEVEL`         | ❌ 否 | 推送级别：`fail_only`（默认，仅失败推送）或 `all`（每次均推送）            |
 | `EXCHANGE_PLAN`      | ❌ 否 | 积分自动兑换计划（#11）：`plan500`（默认，500 分自动兑换 100 天）、`plan200`（200 分→30 天）、`plan100`（100 分→10 天）或 `off`（关闭）。兑换结果即使 `PUSH_LEVEL=fail_only` 也会推送。 |
-| `GLADOS_BROWSER_CHECKIN` | ❌ 否 | Turnstile 真浏览器兜底开关：默认开启；`0` 关闭。检测到 `GITHUB_ACTIONS` 时默认自动禁用，设 `1` 可显式尝试（尚未验证 Actions 首次签到恢复）。 |
-| `GLADOS_BROWSER_HEADLESS` | ❌ 否 | 浏览器兜底改无头模式：默认 `0`（有头）；未验证不同环境的成功率。 |
+| `GLADOS_MANUAL_BROWSER` | ❌ 否 | 仅在本人值守本机时设为 `1`，遇到验证才打开临时浏览器。默认关闭；Actions 不打开。 |
 
 PushPlus、Server酱和 Telegram 均为可选，可单独使用，也可同时配置；多个渠道配置后会分别发送同一份多账号汇总，并遵循同一个 `PUSH_LEVEL` 设置。只读诊断（`diagnose_only`）不发送推送。
+
+<a id="manual-browser"></a>
+
+### 本机人工浏览器与待核对记录
+
+日常用[工作台](../README.md#quick-start)即可。使用脚本且本人就在电脑前时，可以只在当前终端设置 `GLADOS_MANUAL_BROWSER=1`。遇到人机验证后，脚本核对官网返回的账号，显示一个临时浏览器窗口，由你检查账号并亲自操作，最多等 150 秒。它不读取日常浏览器目录，也不沿用旧的 `GLADOS_BROWSER_CHECKIN` 或 `GLADOS_BROWSER_HEADLESS` 开关。升级后请勿依赖计划任务替你操作该窗口。
+
+结果不明时，先查看该账号的官网流水。Windows 的状态目录在 `%LOCALAPPDATA%/glados-checkin-safety`（未设置时在用户主目录），其他平台默认在 `~/glados-checkin-safety`。人工浏览器放行一次提交前会写入空文件 `pending-<摘要>`；相同账号即使换日也不能再从这个浏览器入口提交。摘要是账号邮箱去首尾空白、casefold 后的 UTF-8 字节的 SHA-256。请只在已核对该账号且无活动任务时移除对应标记，不要批量删除。旧版 `unresolved-YYYY-MM-DD` 没有账号信息，需核对涉及的所有账号；崩溃遗留的 `browser.lock` 需确认无活动任务再移除。不同设备、独立的 API 调用和手动打开的官网不共享这个锁。
 
 <a id="cookie"></a>
 ### 🍪 2026 年 9 月新版会话 Cookie
@@ -448,7 +455,6 @@ python3 checkin.py
 ---
 
 <a id="nixos"></a>
-<a id="nixos"></a>
 ## ❄️ NixOS 服务配置
 
 把 Cookie 和推送凭据放在主机上的私有文件中，由 systemd 在服务启动时读取。Nix 配置只需填写该文件的绝对路径字符串。旧版 `cookie` 和推送凭据选项仍可用，但直接填写的值可能进入本机可读的 Nix store。
@@ -485,7 +491,9 @@ python3 checkin.py
 }
 ```
 
-在部署系统上准备 `/run/secrets/glados.env`，设为 root 所有、权限 `0600`。每行填一项，如 `GLADOS_COOKIE="你的 Cookie"` 和 `EXCHANGE_PLAN=off`。这个目录通常在重启后清空，请让你的凭据管理器在服务启动前重新提供文件。可选的 `package` 接受提供 `bin/glados-checkin` 的 Nix 软件包。
+在部署系统上准备 `/run/secrets/glados.env`，设为 root 所有、权限 `0600`。每行填一项，如 `GLADOS_COOKIE="你的 Cookie"` 和 `EXCHANGE_PLAN=off`。这个目录通常在重启后清空，请让你的凭据管理器在服务启动前重新提供文件。
+
+若这台机器只负责核对流水，在同一个 `services.glados-checkin` 配置中加 `mode = "ledger";`。它执行 `bin/glados-ledger`，不会签到、兑换或外发通知；用 `journalctl -u glados-checkin.service` 查看报告。若覆盖 `package`，包须提供所选模式对应的可执行文件。可选 `checkinTime = "18:45:00";` 指定主机本地时间，定时器仍最多随机延后 10 分钟。未指定模式、时间时保留原签到服务和 09:30 的计划。
 
 执行 `sudo nixos-rebuild switch --flake .#my-server` 后，用 `systemctl list-timers glados-checkin.timer` 核对下次运行时间。感谢 @Initsnow 提供模块、软件包覆盖和环境文件方案。[PR #47](https://github.com/lankerr/2026-glados-checkin/pull/47)
 
@@ -599,7 +607,7 @@ GitHub 官方规则是：公开仓库连续 **60 天没有仓库活动**时，�
 <details>
 <summary><b>Q: 支持多个账号吗？</b></summary>
 
-输入解析支持多个账号。**当前浏览器通道共用 profile，存在会话混用风险，不建议依此假定多账号浏览器签到已隔离。**普通 Cookie 请求头可用英文符号 `&` 分隔：
+输入解析支持多个账号。本机人工浏览器按次创建临时目录，身份核对失败时不提交。普通 Cookie 请求头可用英文符号 `&` 分隔：
 
 ```text
 cookie1&cookie2&cookie3

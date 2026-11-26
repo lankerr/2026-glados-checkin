@@ -18,7 +18,19 @@ in
     package = mkOption {
       type = types.package;
       default = self.packages.${pkgs.stdenv.hostPlatform.system}.default;
-      description = "Package providing bin/glados-checkin.";
+      description = "Package providing bin/glados-checkin or bin/glados-ledger for the chosen mode.";
+    };
+
+    mode = mkOption {
+      type = types.enum [ "checkin" "ledger" ];
+      default = "checkin";
+      description = "Use ledger to report points history only (no check-in, redemption or push).";
+    };
+
+    checkinTime = mkOption {
+      type = types.strMatching "([01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]";
+      default = "09:30:00";
+      description = "Daily start time in the host timezone, HH:MM:SS (plus up to ten minutes of jitter).";
     };
 
     environmentFile = mkOption {
@@ -96,7 +108,7 @@ in
 
       serviceConfig = {
         Type = "oneshot";
-        ExecStart = "${cfg.package}/bin/glados-checkin";
+        ExecStart = "${cfg.package}/bin/${if cfg.mode == "ledger" then "glados-ledger" else "glados-checkin"}";
         DynamicUser = true;
         StateDirectory = "glados-checkin";
         WorkingDirectory = "%S/glados-checkin";
@@ -108,7 +120,7 @@ in
       wantedBy = [ "timers.target" ];
       timerConfig = {
         OnCalendar = [
-          "*-*-* 09:30:00"
+          "*-*-* ${cfg.checkinTime}"
         ];
         RandomizedDelaySec = "10m";
         Persistent = true;
